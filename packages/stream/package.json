@@ -1,20 +1,27 @@
 {
   "name": "@culvert/stream",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "The missing standard library for streaming in JavaScript.",
   "type": "module",
-  "main": "dist/index",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "keywords": [],
-  "author": "khali",
-  "license": "ISC",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "devDependencies": {
-    "typescript": "^5.0.0"
-  }
+    "@types/node": "^25.5.2",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
 }

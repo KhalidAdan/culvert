@@ -4,12 +4,16 @@
   "description": "",
   "type": "module",
   "main": "index.js",
-"scripts": {
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "@types/node": "^25.5.2"
   }
 }
