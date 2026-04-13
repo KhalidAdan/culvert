@@ -73,7 +73,7 @@ describe("finalize", () => {
       }),
       discard(),
     );
-    expect(finalized).equal(true);
+    expect(finalized).toStrictEqual(true);
   });
 
   it("runs on error", async () => {
@@ -91,7 +91,7 @@ describe("finalize", () => {
         discard(),
       ),
     ).rejects.toThrow("boom");
-    expect(finalized).equal(true);
+    expect(finalized).toStrictEqual(true);
   });
 
   it("runs on early consumer termination", async () => {
@@ -106,7 +106,7 @@ describe("finalize", () => {
       }),
       takeSink,
     );
-    expect(finalized).equal(true);
+    expect(finalized).toStrictEqual(true);
   });
 });
 
@@ -182,7 +182,7 @@ describe("merge", () => {
     await expect(() => pipe(merge(a, b), collect())).rejects.toThrow(
       "a failed",
     );
-    expect(bReturned).equal(true);
+    expect(bReturned).toStrictEqual(true);
   });
 
   it("handles sources of different lengths", async () => {

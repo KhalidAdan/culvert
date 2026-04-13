@@ -10,7 +10,9 @@ import type { Source, Transform } from "./types.js";
 //    tracking in ZIP). A named concept makes pipelines readable.
 // ---------------------------------------------------------------------------
 
-export function tap<T>(fn: (chunk: T) => void | Promise<void>): Transform<T, T> {
+export function tap<T>(
+  fn: (chunk: T) => void | Promise<void>,
+): Transform<T, T> {
   return async function* (source) {
     for await (const chunk of source) {
       await fn(chunk);
@@ -22,6 +24,7 @@ export function tap<T>(fn: (chunk: T) => void | Promise<void>): Transform<T, T> 
 // ---------------------------------------------------------------------------
 // finalize() — guaranteed cleanup on any termination path.
 //
+// Earns its place because:
 // The streaming equivalent of `finally`. Runs the callback when the
 // pipeline completes, errors, or the consumer stops early. Without this,
 // every resource-holding pipeline needs manual teardown that developers
@@ -43,11 +46,15 @@ export function finalize<T>(fn: () => void | Promise<void>): Transform<T, T> {
 // ---------------------------------------------------------------------------
 // abortable() — wrap a source so it stops yielding when a signal fires.
 //
+// Earns its place because:
 // This keeps abort concerns out of pipe(). The signal is just another
 // reason a source might end. pipe()'s existing teardown handles the rest.
 // ---------------------------------------------------------------------------
 
-export function abortable<T>(source: Source<T>, signal: AbortSignal): Source<T> {
+export function abortable<T>(
+  source: Source<T>,
+  signal: AbortSignal,
+): Source<T> {
   return (async function* () {
     if (signal.aborted) return;
 
@@ -133,7 +140,7 @@ export function batch<T>(size: number, timeoutMs?: number): Transform<T, T[]> {
 
         const nextPromise = iterator.next().then(
           (result) => ({ kind: "next" as const, result }),
-          (err) => ({ kind: "error" as const, error: err })
+          (err) => ({ kind: "error" as const, error: err }),
         );
 
         const winner = await Promise.race([nextPromise, flushPromise]);
@@ -285,7 +292,7 @@ export interface FlatMapOptions {
 
 export function flatMap<I, O>(
   fn: (item: I) => Source<O>,
-  options: FlatMapOptions = {}
+  options: FlatMapOptions = {},
 ): Transform<I, O> {
   const { concurrency = 1 } = options;
 
@@ -402,7 +409,7 @@ export type BufferStrategy = "suspend" | "drop" | "slide" | "error";
 
 export function buffer<T>(
   size: number,
-  strategy: BufferStrategy = "suspend"
+  strategy: BufferStrategy = "suspend",
 ): Transform<T, T> {
   return (source: Source<T>): Source<T> => {
     return (async function* () {
@@ -447,9 +454,7 @@ export function buffer<T>(
                   break;
 
                 case "error":
-                  throw new Error(
-                    `Buffer overflow: capacity ${size} exceeded`
-                  );
+                  throw new Error(`Buffer overflow: capacity ${size} exceeded`);
               }
             }
 
