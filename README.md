@@ -5,18 +5,18 @@
 Quiet. Infrastructural. Essential.
 
 ```ts
-pipe(source, transform, transform, sink)
+pipe(source, transform, transform, sink);
 ```
 
 If you understand that line, you understand Culvert.
 
 ## Packages
 
-| Package | Purpose |
-|---|---|
-| [`@culvert/stream`](./packages/stream) | Source/Transform/Sink + `pipe()` + 8 operators + `channel()` |
-| [`@culvert/zip`](./packages/zip) | Streaming ZIP writer + forward reader + random-access reader with ZIP64 |
-| [`@culvert/crc32`](./packages/crc32) | IEEE 802.3 CRC-32 — streaming-native, zero dependencies |
+| Package                                | Purpose                                                                 |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| [`@culvert/stream`](./packages/stream) | Source/Transform/Sink + `pipe()` + 8 operators + `channel()`            |
+| [`@culvert/zip`](./packages/zip)       | Streaming ZIP writer + forward reader + random-access reader with ZIP64 |
+| [`@culvert/crc32`](./packages/crc32)   | IEEE 802.3 CRC-32 — streaming-native, zero dependencies                 |
 
 ## Design bet
 
@@ -46,10 +46,7 @@ This graph stays clean and acyclic. If it doesn't, we've lost the plot.
 
 ## Status
 
-**v1.5 — shipped.** Stream, crc32, and zip are in production use by the
-audiobook downloader pipeline that started this project. Random-access
-ZIP reading — with ZIP64 support — quietly landed for the comic reader
-use case.
+**v1.5 — shipped.** Stream, crc32, and zip are in.
 
 **Next:** `@culvert/gzip`, once real usage of the current three packages
 signals it's time. Not before.
