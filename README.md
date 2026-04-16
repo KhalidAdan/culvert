@@ -48,8 +48,7 @@ This graph stays clean and acyclic. If it doesn't, we've lost the plot.
 
 **v1.5 — shipped.** Stream, crc32, and zip are in.
 
-**Next:** `@culvert/gzip`, once real usage of the current three packages
-signals it's time. Not before.
+**Next:** `@culvert/gzip`.
 
 ## License
 
