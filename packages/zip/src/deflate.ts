@@ -24,7 +24,7 @@ export function deflateRaw(): Transform<Uint8Array, Uint8Array> {
     const pump = (async () => {
       try {
         for await (const chunk of source) {
-          await writer.write(chunk);
+          await writer.write(chunk as any);
         }
         await writer.close();
       } catch (err) {
@@ -59,7 +59,7 @@ export function inflateRaw(): Transform<Uint8Array, Uint8Array> {
     const pump = (async () => {
       try {
         for await (const chunk of source) {
-          await writer.write(chunk);
+          await writer.write(chunk as any);
         }
         await writer.close();
       } catch (err) {

@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:all": "npm run build -ws"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

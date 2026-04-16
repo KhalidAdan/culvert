@@ -83,7 +83,9 @@ export function createZip(
             compress = opts.compress;
             compressionMethod = opts.compressionMethod;
           } else {
-            const mode = opts.compression ?? "deflate";
+            const mode =
+              (opts as { compression?: "deflate" | "store" }).compression ??
+              "deflate";
             if (mode === "store") {
               compress = identityTransform();
               compressionMethod = 0;

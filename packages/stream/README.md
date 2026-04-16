@@ -50,9 +50,6 @@ from([1, 2, 3])        of(1, 2, 3)         empty()
 
 collect()              // → T[]
 collectBytes()         // → Uint8Array
-forEach(fn)            // side effects
-reduce(fn, init)       // → accumulator
-discard()              // /dev/null
 ```
 
 ## Web Streams bridge
