@@ -5,6 +5,8 @@ import {
   findEOCD,
   parseCentralDirectory,
   parseLocalHeaderDataOffset,
+  parseZip64EOCDRecord,
+  ZIP64_EOCD_FIXED_SIZE,
 } from "./binary-reader.js";
 import { identityTransform, inflateRaw } from "./deflate.js";
 import { ZipCorruptionError } from "./errors.js";
@@ -42,7 +44,24 @@ export async function openZip(
   // --- Hop 1: Find the EOCD ---
   const tailSize = Math.min(seekable.size, EOCD_SEARCH_SIZE);
   const tail = await seekable.read(seekable.size - tailSize, tailSize);
-  const eocd = findEOCD(tail);
+  let eocd = findEOCD(tail);
+
+  // --- Hop 1b: For ZIP64, read the ZIP64 EOCD record ---
+  // The standard EOCD held sentinel values; the real numbers live
+  // in the ZIP64 EOCD record pointed to by the ZIP64 locator.
+  if (eocd.zip64EocdOffset !== null) {
+    const zip64Bytes = await seekable.read(
+      eocd.zip64EocdOffset,
+      ZIP64_EOCD_FIXED_SIZE,
+    );
+    const zip64 = parseZip64EOCDRecord(zip64Bytes);
+    eocd = {
+      entryCount: zip64.entryCount,
+      centralDirectorySize: zip64.centralDirectorySize,
+      centralDirectoryOffset: zip64.centralDirectoryOffset,
+      zip64EocdOffset: eocd.zip64EocdOffset,
+    };
+  }
 
   // --- Hop 2: Read the central directory ---
   const cdBytes = await seekable.read(

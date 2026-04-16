@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { abortable } from "./operators.js";
 import { pipe } from "./pipe.js";
-import { collect, discard } from "./sinks.js";
+import { collect } from "./sinks.js";
 import { from } from "./sources.js";
 import type { Sink, Source, Transform } from "./types.js";
+
+// Simple sink that consumes everything and returns void
+const consume: Sink<unknown> = async (source) => {
+  for await (const _ of source) { /* drain */ }
+};
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -218,6 +223,6 @@ describe("pipe: error clarity", () => {
         throw new Error("cleanup boom");
       }
     })();
-    await expect(() => pipe(source, discard())).rejects.toThrow("cleanup boom");
+    await expect(() => pipe(source, consume)).rejects.toThrow("cleanup boom");
   });
 });

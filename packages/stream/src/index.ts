@@ -21,7 +21,7 @@ export type { BufferStrategy, FlatMapOptions } from "./operators.js";
 export { empty, from, of } from "./sources.js";
 
 // Sinks — pipeline terminators
-export { collect, collectBytes, discard, forEach, reduce } from "./sinks.js";
+export { collect, collectBytes } from "./sinks.js";
 
 // Bridges — interop with Web Streams
 export { fromReadableStream, toReadableStream, writeTo } from "./bridge.js";

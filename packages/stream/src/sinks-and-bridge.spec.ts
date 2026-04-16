@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fromReadableStream, toReadableStream } from "./bridge.js";
 import { tap } from "./operators.js";
 import { pipe } from "./pipe.js";
-import { collect, collectBytes, discard, forEach, reduce } from "./sinks.js";
+import { collect, collectBytes } from "./sinks.js";
 import { from } from "./sources.js";
 
 // ---------------------------------------------------------------------------
@@ -30,63 +30,6 @@ describe("collectBytes", () => {
   it("handles empty input", async () => {
     const result = await pipe(from([]), collectBytes());
     expect(result).toStrictEqual(new Uint8Array(0));
-  });
-});
-
-describe("forEach", () => {
-  it("runs function on every item", async () => {
-    const items: number[] = [];
-    await pipe(
-      from([1, 2, 3]),
-      forEach((n) => {
-        items.push(n);
-      }),
-    );
-    expect(items).toStrictEqual([1, 2, 3]);
-  });
-
-  it("awaits async callbacks", async () => {
-    const items: number[] = [];
-    await pipe(
-      from([1, 2, 3]),
-      forEach(async (n) => {
-        await new Promise<void>((r) => setTimeout(r, 5));
-        items.push(n);
-      }),
-    );
-    expect(items).toStrictEqual([1, 2, 3]);
-  });
-});
-
-describe("reduce", () => {
-  it("folds items into a single value", async () => {
-    const sum = await pipe(
-      from([1, 2, 3, 4]),
-      reduce((acc, n) => acc + n, 0),
-    );
-    expect(sum).toEqual(10);
-  });
-
-  it("handles empty input", async () => {
-    const result = await pipe(
-      from([] as number[]),
-      reduce((acc: number, _n: number) => acc, 42),
-    );
-    expect(result).toEqual(42);
-  });
-});
-
-describe("discard", () => {
-  it("consumes everything, returns void", async () => {
-    let count = 0;
-    await pipe(
-      from([1, 2, 3]),
-      tap(() => {
-        count++;
-      }),
-      discard(),
-    );
-    expect(count).toEqual(3);
   });
 });
 

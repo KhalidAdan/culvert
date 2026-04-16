@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import { channel } from "../src/channel.js";
 import { tap } from "../src/operators.js";
 import { pipe } from "../src/pipe.js";
-import { collect, discard } from "../src/sinks.js";
+import { collect } from "../src/sinks.js";
 import type { Sink, Source } from "../src/types.js";
+
+// Simple sink that consumes everything and returns void
+const consume: Sink<unknown> = async (source) => {
+  for await (const _ of source) { /* drain */ }
+};
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -241,7 +246,7 @@ describe("channel: errors", () => {
         tap((n) => {
           items.push(n);
         }),
-        discard(),
+        consume,
       );
     }).rejects.toThrow("mid-stream failure");
 

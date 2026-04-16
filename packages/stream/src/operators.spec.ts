@@ -8,9 +8,14 @@ import {
   tap,
 } from "../src/operators.js";
 import { pipe } from "../src/pipe.js";
-import { collect, discard } from "../src/sinks.js";
+import { collect } from "../src/sinks.js";
 import { from } from "../src/sources.js";
 import type { Sink, Source } from "../src/types.js";
+
+// Simple sink that consumes everything and returns void — used for side-effect-only tests
+const consume: Sink<unknown> = async (source) => {
+  for await (const _ of source) { /* drain */ }
+};
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -42,7 +47,7 @@ describe("tap", () => {
       tap((n) => {
         order.push(`sync-${n}`);
       }),
-      discard(),
+      consume,
     );
     expect(order).toStrictEqual(["tap-1", "sync-1", "tap-2", "sync-2"]);
   });
@@ -54,7 +59,7 @@ describe("tap", () => {
         tap((n) => {
           if (n === 2) throw new Error("tap error");
         }),
-        discard(),
+        consume,
       ),
     ).rejects.toThrow("tap error");
   });
@@ -71,7 +76,7 @@ describe("finalize", () => {
       finalize(() => {
         finalized = true;
       }),
-      discard(),
+      consume,
     );
     expect(finalized).toStrictEqual(true);
   });
@@ -88,7 +93,7 @@ describe("finalize", () => {
         finalize(() => {
           finalized = true;
         }),
-        discard(),
+        consume,
       ),
     ).rejects.toThrow("boom");
     expect(finalized).toStrictEqual(true);

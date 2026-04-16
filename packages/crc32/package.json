@@ -1,7 +1,7 @@
 {
   "name": "@culvert/crc32",
   "version": "0.1.0",
-  "description": "",
+  "description": "IEEE 802.3 CRC-32. Streaming-native. Zero dependencies.",
   "type": "module",
   "main": "dist/index",
   "types": "dist/index.d.ts",
@@ -12,7 +12,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc",

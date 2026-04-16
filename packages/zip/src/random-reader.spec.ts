@@ -361,7 +361,7 @@ describe("openZip", () => {
     ]);
 
     const archive = await openZip(fromBuffer(zipBytes));
-    const entry = archive.entry("fox.txt");
+    const entry = archive.entry("fox.txt")!;
     expect(entry).toBeDefined();
 
     const data = await collectBytes(archive.source(entry));
@@ -398,7 +398,7 @@ describe("openZip", () => {
     zipBytes[dataStart] = zipBytes[dataStart]! ^ 0xff; // flip bits
 
     const archive = await openZip(fromBuffer(zipBytes));
-    const entry = archive.entry("test.txt");
+    const entry = archive.entry("test.txt")!;
     expect(entry).toBeDefined();
 
     await expect(
@@ -757,5 +757,305 @@ describe("CBZ simulation", () => {
     expect(decoder.decode(data1)).toStrictEqual("[image data for page 1]");
 
     await archive.close();
+  });
+});
+
+// ===========================================================================
+// ZIP64 — synthetic archives (we can't realistically generate 4GB+ of data
+// in a unit test, so we hand-construct archives with ZIP64 sentinels and
+// extra fields).
+// ===========================================================================
+
+describe("ZIP64 random-access reader", () => {
+  /**
+   * Build a minimal ZIP64 archive containing a single stored entry whose
+   * sizes and offset are carried in the ZIP64 extra field. The actual
+   * file data is small so the test runs fast.
+   */
+  function buildZip64Archive(
+    name: string,
+    data: Uint8Array,
+    opts: {
+      declareBigCompressedSize?: boolean;
+      declareBigUncompressedSize?: boolean;
+      declareBigLocalHeaderOffset?: boolean;
+      declareBigEntryCount?: boolean;
+    } = {},
+  ): Uint8Array {
+    const declareBigCompressed = opts.declareBigCompressedSize ?? true;
+    const declareBigUncompressed = opts.declareBigUncompressedSize ?? true;
+    const declareBigOffset = opts.declareBigLocalHeaderOffset ?? false;
+    const declareBigEntryCount = opts.declareBigEntryCount ?? false;
+
+    const nameBytes = encoder.encode(name);
+    const crc = new CRC32();
+    crc.update(data);
+    const crcValue = crc.digest();
+
+    const actualCompressedSize = data.length;
+    const actualUncompressedSize = data.length;
+    const actualLocalHeaderOffset = 0;
+
+    // --- Local file header with ZIP64 extra field ---
+    // Fixed header stores 0xFFFFFFFF sentinels for the fields we want
+    // to declare as ZIP64.
+    const lfhExtra = new Uint8Array(
+      4 + (declareBigUncompressed ? 8 : 0) + (declareBigCompressed ? 8 : 0),
+    );
+    writeUint16LE(lfhExtra, 0, 0x0001); // ZIP64 tag
+    writeUint16LE(lfhExtra, 2, lfhExtra.length - 4); // data size
+    {
+      let p = 4;
+      if (declareBigUncompressed) {
+        writeUint64LE(lfhExtra, p, actualUncompressedSize);
+        p += 8;
+      }
+      if (declareBigCompressed) {
+        writeUint64LE(lfhExtra, p, actualCompressedSize);
+        p += 8;
+      }
+    }
+
+    const lfh = new Uint8Array(
+      LOCAL_HEADER_FIXED_SIZE + nameBytes.length + lfhExtra.length,
+    );
+    writeUint32LE(lfh, 0, SIG_LOCAL_FILE);
+    writeUint16LE(lfh, 4, 45); // version needed: ZIP64
+    writeUint16LE(lfh, 6, 0x0800); // flags: UTF-8
+    writeUint16LE(lfh, 8, COMPRESSION_STORE);
+    writeUint16LE(lfh, 10, 0);
+    writeUint16LE(lfh, 12, 0);
+    writeUint32LE(lfh, 14, crcValue);
+    writeUint32LE(lfh, 18, declareBigCompressed ? 0xffffffff : data.length);
+    writeUint32LE(lfh, 22, declareBigUncompressed ? 0xffffffff : data.length);
+    writeUint16LE(lfh, 26, nameBytes.length);
+    writeUint16LE(lfh, 28, lfhExtra.length);
+    lfh.set(nameBytes, 30);
+    lfh.set(lfhExtra, 30 + nameBytes.length);
+
+    // --- Central directory entry with ZIP64 extra field ---
+    const cdExtra = new Uint8Array(
+      4 +
+        (declareBigUncompressed ? 8 : 0) +
+        (declareBigCompressed ? 8 : 0) +
+        (declareBigOffset ? 8 : 0),
+    );
+    writeUint16LE(cdExtra, 0, 0x0001);
+    writeUint16LE(cdExtra, 2, cdExtra.length - 4);
+    {
+      let p = 4;
+      if (declareBigUncompressed) {
+        writeUint64LE(cdExtra, p, actualUncompressedSize);
+        p += 8;
+      }
+      if (declareBigCompressed) {
+        writeUint64LE(cdExtra, p, actualCompressedSize);
+        p += 8;
+      }
+      if (declareBigOffset) {
+        writeUint64LE(cdExtra, p, actualLocalHeaderOffset);
+        p += 8;
+      }
+    }
+
+    const cd = new Uint8Array(
+      CENTRAL_DIR_FIXED_SIZE + nameBytes.length + cdExtra.length,
+    );
+    writeUint32LE(cd, 0, SIG_CENTRAL_DIR);
+    writeUint16LE(cd, 4, 45);
+    writeUint16LE(cd, 6, 45);
+    writeUint16LE(cd, 8, 0x0800);
+    writeUint16LE(cd, 10, COMPRESSION_STORE);
+    writeUint16LE(cd, 12, 0);
+    writeUint16LE(cd, 14, 0);
+    writeUint32LE(cd, 16, crcValue);
+    writeUint32LE(cd, 20, declareBigCompressed ? 0xffffffff : data.length);
+    writeUint32LE(cd, 24, declareBigUncompressed ? 0xffffffff : data.length);
+    writeUint16LE(cd, 28, nameBytes.length);
+    writeUint16LE(cd, 30, cdExtra.length);
+    writeUint16LE(cd, 32, 0);
+    writeUint16LE(cd, 34, 0);
+    writeUint16LE(cd, 36, 0);
+    writeUint32LE(cd, 38, 0);
+    writeUint32LE(cd, 42, declareBigOffset ? 0xffffffff : 0);
+    cd.set(nameBytes, 46);
+    cd.set(cdExtra, 46 + nameBytes.length);
+
+    // --- Assemble body: LFH + data + CD ---
+    const lfhEnd = lfh.length + data.length;
+    const cdOffset = lfhEnd;
+    const cdSize = cd.length;
+    const afterCd = cdOffset + cdSize;
+
+    // --- ZIP64 EOCD record (56 bytes) ---
+    const z64eocd = new Uint8Array(56);
+    writeUint32LE(z64eocd, 0, 0x06064b50); // SIG_ZIP64_END_OF_CENTRAL_DIR
+    writeUint64LE(z64eocd, 4, 44); // size of this record - 12
+    writeUint16LE(z64eocd, 12, 45); // version made by
+    writeUint16LE(z64eocd, 14, 45); // version needed
+    writeUint32LE(z64eocd, 16, 0);
+    writeUint32LE(z64eocd, 20, 0);
+    writeUint64LE(z64eocd, 24, 1); // entries on this disk
+    writeUint64LE(z64eocd, 32, 1); // total entries
+    writeUint64LE(z64eocd, 40, cdSize);
+    writeUint64LE(z64eocd, 48, cdOffset);
+
+    // --- ZIP64 EOCD locator (20 bytes) ---
+    const z64loc = new Uint8Array(20);
+    writeUint32LE(z64loc, 0, 0x07064b50); // SIG_ZIP64_END_OF_CENTRAL_DIR_LOCATOR
+    writeUint32LE(z64loc, 4, 0);
+    writeUint64LE(z64loc, 8, afterCd); // offset of ZIP64 EOCD record
+    writeUint32LE(z64loc, 16, 1);
+
+    // --- Standard EOCD with sentinel values ---
+    const eocd = new Uint8Array(EOCD_FIXED_SIZE);
+    writeUint32LE(eocd, 0, SIG_END_OF_CENTRAL_DIR);
+    writeUint16LE(eocd, 4, 0);
+    writeUint16LE(eocd, 6, 0);
+    writeUint16LE(eocd, 8, declareBigEntryCount ? 0xffff : 1);
+    writeUint16LE(eocd, 10, declareBigEntryCount ? 0xffff : 1);
+    writeUint32LE(eocd, 12, 0xffffffff);
+    writeUint32LE(eocd, 16, 0xffffffff);
+    writeUint16LE(eocd, 20, 0);
+
+    // --- Assemble full archive ---
+    const total =
+      lfh.length +
+      data.length +
+      cd.length +
+      z64eocd.length +
+      z64loc.length +
+      eocd.length;
+    const out = new Uint8Array(total);
+    let pos = 0;
+    out.set(lfh, pos);
+    pos += lfh.length;
+    out.set(data, pos);
+    pos += data.length;
+    out.set(cd, pos);
+    pos += cd.length;
+    out.set(z64eocd, pos);
+    pos += z64eocd.length;
+    out.set(z64loc, pos);
+    pos += z64loc.length;
+    out.set(eocd, pos);
+    return out;
+  }
+
+  /** Helper: write a uint64LE into a buffer. */
+  function writeUint64LE(buf: Uint8Array, offset: number, value: number): void {
+    // Split into low/high 32-bit halves (matches binary.ts writeUint64)
+    const lo = value >>> 0;
+    const hi = Math.floor(value / 0x100000000);
+    writeUint32LE(buf, offset, lo);
+    writeUint32LE(buf, offset + 4, hi);
+  }
+
+  it("reads a single entry with ZIP64 size sentinels", async () => {
+    const content = "hello from a synthetic ZIP64 archive";
+    const data = encoder.encode(content);
+    const zipBytes = buildZip64Archive("zip64.txt", data);
+
+    const archive = await openZip(fromBuffer(zipBytes));
+    expect(archive.entries.length).toStrictEqual(1);
+
+    const entry = archive.entry("zip64.txt")!;
+    expect(entry).toBeDefined();
+    expect(entry.compressedSize).toStrictEqual(data.length);
+    expect(entry.uncompressedSize).toStrictEqual(data.length);
+
+    const out = await collectBytes(archive.source(entry));
+    expect(decoder.decode(out)).toStrictEqual(content);
+
+    await archive.close();
+  });
+
+  it("reads a ZIP64 archive with big-offset sentinel (offset in extra field)", async () => {
+    const data = encoder.encode("offset carried in extra field");
+    const zipBytes = buildZip64Archive("offset.txt", data, {
+      declareBigLocalHeaderOffset: true,
+    });
+
+    const archive = await openZip(fromBuffer(zipBytes));
+    const entry = archive.entry("offset.txt")!;
+    expect(entry.localHeaderOffset).toStrictEqual(0); // real value from extra
+
+    const out = await collectBytes(archive.source(entry));
+    expect(decoder.decode(out)).toStrictEqual("offset carried in extra field");
+
+    await archive.close();
+  });
+
+  it("reads a ZIP64 archive with big-entry-count sentinel", async () => {
+    const data = encoder.encode("counted in zip64 eocd");
+    const zipBytes = buildZip64Archive("count.txt", data, {
+      declareBigEntryCount: true,
+    });
+
+    const archive = await openZip(fromBuffer(zipBytes));
+    expect(archive.entries.length).toStrictEqual(1);
+
+    const out = await collectBytes(archive.source(archive.entries[0]!));
+    expect(decoder.decode(out)).toStrictEqual("counted in zip64 eocd");
+
+    await archive.close();
+  });
+
+  it("throws when a ZIP64-sentinel entry lacks a ZIP64 extra field", async () => {
+    // Construct a valid archive then mangle: clear the extra field length
+    const data = encoder.encode("mangled");
+    const zipBytes = buildZip64Archive("mangled.txt", data);
+
+    // Zero out the CD extra field length to simulate a corrupt archive.
+    // The CD starts right after the local header + file data.
+    // We have to find CD_EXTRA_LEN_OFFSET within the CD entry.
+    // Easier: walk forward to the SIG_CENTRAL_DIR signature.
+    let cdOffset = -1;
+    for (let i = 0; i < zipBytes.length - 4; i++) {
+      if (
+        zipBytes[i] === 0x50 &&
+        zipBytes[i + 1] === 0x4b &&
+        zipBytes[i + 2] === 0x01 &&
+        zipBytes[i + 3] === 0x02
+      ) {
+        cdOffset = i;
+        break;
+      }
+    }
+    expect(cdOffset).toBeGreaterThan(0);
+    // Zero the extra field length (offset 30 from start of CD entry)
+    zipBytes[cdOffset + 30] = 0;
+    zipBytes[cdOffset + 31] = 0;
+
+    await expect(
+      async () => await openZip(fromBuffer(zipBytes)),
+    ).rejects.toThrow(ZipCorruptionError);
+  });
+
+  it("throws on ZIP64 locator with invalid signature", async () => {
+    const data = encoder.encode("bad locator");
+    const zipBytes = buildZip64Archive("bad.txt", data);
+
+    // Locate and corrupt the ZIP64 locator signature.
+    // It sits 20 bytes before the standard EOCD signature.
+    let eocdOffset = -1;
+    for (let i = zipBytes.length - 22; i >= 0; i--) {
+      if (
+        zipBytes[i] === 0x50 &&
+        zipBytes[i + 1] === 0x4b &&
+        zipBytes[i + 2] === 0x05 &&
+        zipBytes[i + 3] === 0x06
+      ) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    const locatorOffset = eocdOffset - 20;
+    zipBytes[locatorOffset] = 0xde;
+    zipBytes[locatorOffset + 1] = 0xad;
+
+    await expect(
+      async () => await openZip(fromBuffer(zipBytes)),
+    ).rejects.toThrow(ZipCorruptionError);
   });
 });
