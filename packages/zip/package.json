@@ -26,7 +26,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc --build"
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "devDependencies": {
     "typescript": "^5.7.0"
