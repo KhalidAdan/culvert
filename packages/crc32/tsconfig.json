@@ -21,5 +21,6 @@
     "rootDir": "./src",
     "types": ["vitest/globals"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts", "**/*.test.ts"]
 }
