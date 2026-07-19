@@ -1,14 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { gzip, gzipWith, gunzip, gunzipWith } from "./index.js";
+import { gzip, gunzip } from "./index.js";
 import { pipe, collectBytes, from } from "@culvert/stream";
+import { createTestDeflator, createTestInflator } from "./test-codec.js";
 
-// Helper: compress then decompress, return the round-tripped bytes
-async function roundTrip(
+function roundTrip(
   input: Uint8Array,
-  gzipOpts?: Parameters<typeof gzip>[0],
-  gunzipOpts?: Parameters<typeof gunzip>[0],
+  gzipOpts?: Parameters<typeof gzip>[1],
+  gunzipOpts?: Parameters<typeof gunzip>[1],
 ): Promise<Uint8Array> {
-  return pipe(from([input]), gzip(gzipOpts), gunzip(gunzipOpts), collectBytes());
+  return pipe(
+    from([input]),
+    gzip(createTestDeflator(), gzipOpts),
+    gunzip(createTestInflator(), gunzipOpts),
+    collectBytes(),
+  );
 }
 
 describe("gzip/gunzip round-trip", () => {
@@ -36,8 +41,16 @@ describe("gzip/gunzip round-trip", () => {
     const b = new TextEncoder().encode("chunk two ");
     const c = new TextEncoder().encode("chunk three");
 
-    const compressed = await pipe(from([a, b, c]), gzip(), collectBytes());
-    const decompressed = await pipe(from([compressed]), gunzip(), collectBytes());
+    const compressed = await pipe(
+      from([a, b, c]),
+      gzip(createTestDeflator()),
+      collectBytes(),
+    );
+    const decompressed = await pipe(
+      from([compressed]),
+      gunzip(createTestInflator()),
+      collectBytes(),
+    );
 
     const expected = new Uint8Array(a.length + b.length + c.length);
     expected.set(a, 0);
@@ -46,8 +59,7 @@ describe("gzip/gunzip round-trip", () => {
     expect(decompressed).toEqual(expected);
   });
 
-  it("round-trips 1 MiB of data (memory stays flat)", async () => {
-    // Generate deterministic 1 MiB of data
+  it("round-trips 1 MiB of data", async () => {
     const input = new Uint8Array(1024 * 1024);
     for (let i = 0; i < input.length; i++) {
       input[i] = (i * 7 + 13) & 0xff;
@@ -58,19 +70,19 @@ describe("gzip/gunzip round-trip", () => {
 });
 
 describe("gzip header options", () => {
-  it("produces valid gzip with filename", async () => {
+  it("round-trips with filename", async () => {
     const input = new TextEncoder().encode("data");
     const output = await roundTrip(input, { filename: "test.txt" });
     expect(output).toEqual(input);
   });
 
-  it("produces valid gzip with comment", async () => {
+  it("round-trips with comment", async () => {
     const input = new TextEncoder().encode("data");
     const output = await roundTrip(input, { comment: "a comment" });
     expect(output).toEqual(input);
   });
 
-  it("produces valid gzip with filename and comment", async () => {
+  it("round-trips with filename and comment", async () => {
     const input = new TextEncoder().encode("data");
     const output = await roundTrip(input, {
       filename: "test.txt",
@@ -79,7 +91,7 @@ describe("gzip header options", () => {
     expect(output).toEqual(input);
   });
 
-  it("produces valid gzip with custom mtime", async () => {
+  it("round-trips with custom mtime", async () => {
     const input = new TextEncoder().encode("data");
     const output = await roundTrip(input, {
       mtime: new Date("2024-06-15T00:00:00Z"),
@@ -89,17 +101,33 @@ describe("gzip header options", () => {
 });
 
 describe("reproducibility", () => {
-  it("same input + same options = identical output", async () => {
+  it("same input + same codec + same options = identical output", async () => {
     const input = new TextEncoder().encode("deterministic");
-    const a = await pipe(from([input]), gzip(), collectBytes());
-    const b = await pipe(from([input]), gzip(), collectBytes());
+    const a = await pipe(
+      from([input]),
+      gzip(createTestDeflator()),
+      collectBytes(),
+    );
+    const b = await pipe(
+      from([input]),
+      gzip(createTestDeflator()),
+      collectBytes(),
+    );
     expect(a).toEqual(b);
   });
 
-  it("default mtime is epoch (reproducible)", async () => {
+  it("default mtime is epoch", async () => {
     const input = new TextEncoder().encode("test");
-    const a = await pipe(from([input]), gzip(), collectBytes());
-    const b = await pipe(from([input]), gzip({ mtime: new Date(0) }), collectBytes());
+    const a = await pipe(
+      from([input]),
+      gzip(createTestDeflator()),
+      collectBytes(),
+    );
+    const b = await pipe(
+      from([input]),
+      gzip(createTestDeflator(), { mtime: new Date(0) }),
+      collectBytes(),
+    );
     expect(a).toEqual(b);
   });
 });

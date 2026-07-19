@@ -1,21 +1,19 @@
 // ---------------------------------------------------------------------------
 // @culvert/gzip — public API
 //
-// 10 exports. Four functions, four types, two errors.
+// 9 exports. Two functions, five types, two errors.
 // Everything else is internal.
 // ---------------------------------------------------------------------------
 
 // --- Functions ---
-export { gzip, gzipWith } from "./gzip.js";
-export { gunzip, gunzipWith } from "./gunzip.js";
+export { gzip } from "./gzip.js";
+export { gunzip } from "./gunzip.js";
 
-// --- Types ---
-export type {
-  GzipOptions,
-  GunzipOptions,
-  GzipWithOptions,
-  GunzipWithOptions,
-} from "./types.js";
+// --- Codec interfaces (for implementors) ---
+export type { Inflator, InflateResult, Deflator } from "./types.js";
+
+// --- Options ---
+export type { GzipOptions, GunzipOptions } from "./types.js";
 
 // --- Errors ---
 export { GzipCorruptionError } from "./errors.js";

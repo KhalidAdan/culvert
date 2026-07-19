@@ -2,6 +2,7 @@ import { gunzip } from "@culvert/gzip";
 import { fromReadableStream, pipe, tap } from "@culvert/stream";
 import { readTarEntries } from "@culvert/tar";
 import type { PeekEvent } from "~/lib/events";
+import { pakoInflator } from "~/lib/inflator";
 import { resolveTarball } from "~/lib/npm";
 import type { Route } from "./+types/api.peek";
 
@@ -96,7 +97,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
         await pipe(
           fromReadableStream(res.body),
-          gunzip({ signal: request.signal }),
+          gunzip(pakoInflator(), { signal: request.signal }),
           tap((chunk: Uint8Array) => {
             bytesIn += chunk.byteLength;
           }),

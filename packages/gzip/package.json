@@ -1,7 +1,15 @@
 {
   "name": "@culvert/gzip",
-  "version": "0.1.0",
-  "description": "Streaming gzip compression and decompression. Platform-native DEFLATE. CRC-32 verified. Concatenated member support.",
+  "version": "0.2.0",
+  "description": "Streaming gzip framing. BYOC DEFLATE. CRC-32 verified. Concatenated member support.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KhalidAdan/culvert.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KhalidAdan/culvert/issues"
+  },
+  "homepage": "https://github.com/KhalidAdan/culvert#readme",
   "type": "module",
   "main": "dist/index",
   "types": "dist/index.d.ts",
@@ -23,12 +31,22 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "devDependencies": {
+    "@types/pako": "^2.0.4",
+    "pako": "^2.1.0",
     "typescript": "^5.7.0"
   },
   "dependencies": {
-    "@culvert/stream": "*",
-    "@culvert/crc32": "*"
+    "@culvert/crc32": "*",
+    "@culvert/stream": "*"
   },
+  "keywords": [
+    "gzip",
+    "gunzip",
+    "deflate",
+    "streaming",
+    "compression",
+    "rfc1952"
+  ],
   "engines": {
     "node": ">=18"
   },

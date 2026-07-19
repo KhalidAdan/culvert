@@ -9,7 +9,7 @@
   "bugs": {
     "url": "https://github.com/KhalidAdan/culvert/issues"
   },
-  "homepage": "#",
+  "homepage": "https://github.com/KhalidAdan/culvert#readme",
   "type": "module",
   "main": "dist/index",
   "types": "dist/index.d.ts",

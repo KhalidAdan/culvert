@@ -1,52 +1,93 @@
 import { describe, it, expect } from "vitest";
-import { gzipWith, gunzipWith } from "./index.js";
-import { deflateRaw, inflateRaw } from "./deflate.js";
+import { gzip, gunzip } from "./index.js";
 import { pipe, collectBytes, from } from "@culvert/stream";
-import type { Transform } from "@culvert/stream";
+import type { Inflator, Deflator } from "./types.js";
+import { FOOTER_SIZE } from "./constants.js";
 
-describe("BYOC (bring your own compressor)", () => {
-  it("round-trips with explicit deflateRaw/inflateRaw", async () => {
-    const input = new TextEncoder().encode("BYOC test");
+describe("codec interface", () => {
+  it("CRC is computed on uncompressed data regardless of codec", async () => {
+    const input = new TextEncoder().encode("CRC check");
+
+    // Identity "codec" — no actual compression
+    const identityDeflator: Deflator = {
+      deflate(chunk, _final) {
+        return chunk;
+      },
+    };
+
+    const identityInflator: Inflator = {
+      inflate(chunk) {
+        return { output: chunk, consumed: chunk.length, done: true };
+      },
+      reset() {},
+    };
 
     const compressed = await pipe(
       from([input]),
-      gzipWith({ compress: deflateRaw() }),
+      gzip(identityDeflator),
       collectBytes(),
     );
 
+    // Split so the gzip footer is in its own chunk; the identity
+    // inflator doesn't understand DEFLATE boundaries and would
+    // otherwise consume the footer bytes.
+    const body = compressed.subarray(0, compressed.length - FOOTER_SIZE);
+    const footer = compressed.subarray(compressed.length - FOOTER_SIZE);
+
     const decompressed = await pipe(
-      from([compressed]),
-      gunzipWith({ decompress: inflateRaw() }),
+      from([body, footer]),
+      gunzip(identityInflator),
       collectBytes(),
     );
 
     expect(decompressed).toEqual(input);
   });
 
-  it("CRC is computed on uncompressed data regardless of compressor", async () => {
-    const input = new TextEncoder().encode("CRC check");
+  it("inflator.reset() is called between concatenated members", async () => {
+    const input = new TextEncoder().encode("data");
 
-    // Use an identity "compressor" — no actual compression
-    const identity: Transform<Uint8Array, Uint8Array> = async function* (
-      source,
-    ) {
-      for await (const chunk of source) yield chunk;
+    // Deflator that just passes through
+    const identityDeflator: Deflator = {
+      deflate(chunk, _final) {
+        return chunk;
+      },
     };
 
-    const compressed = await pipe(
+    // Compress two members
+    const memberA = await pipe(
       from([input]),
-      gzipWith({ compress: identity }),
+      gzip(identityDeflator),
+      collectBytes(),
+    );
+    const memberB = await pipe(
+      from([input]),
+      gzip(identityDeflator),
       collectBytes(),
     );
 
-    // Decompressing with the same identity "decompressor" should work
-    // and CRC should validate
-    const decompressed = await pipe(
-      from([compressed]),
-      gunzipWith({ decompress: identity }),
-      collectBytes(),
-    );
+    // Split each member so its footer is in a separate chunk;
+    // otherwise the identity inflator consumes footer bytes.
+    const chunks: Uint8Array[] = [
+      memberA.subarray(0, memberA.length - FOOTER_SIZE),
+      memberA.subarray(memberA.length - FOOTER_SIZE),
+      memberB.subarray(0, memberB.length - FOOTER_SIZE),
+      memberB.subarray(memberB.length - FOOTER_SIZE),
+    ];
 
-    expect(decompressed).toEqual(input);
+    // Inflator that tracks reset calls
+    let resetCount = 0;
+    const trackingInflator: Inflator = {
+      inflate(chunk) {
+        return { output: chunk, consumed: chunk.length, done: true };
+      },
+      reset() {
+        resetCount++;
+      },
+    };
+
+    await pipe(from(chunks), gunzip(trackingInflator), collectBytes());
+
+    // reset() called after first member, and after second member
+    expect(resetCount).toBe(2);
   });
 });

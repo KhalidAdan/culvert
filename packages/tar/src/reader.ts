@@ -90,8 +90,14 @@ function mergeFields(
   // uid/gid: PAX overrides if present.
   const paxUid = pax.get(PAX_KEY_UID);
   const uid = paxUid !== undefined ? Number(paxUid) : parsed.uid;
+  if (!Number.isInteger(uid) || uid < 0) {
+    throw new TarCorruptionError(`Invalid uid value: ${paxUid ?? parsed.uid}`);
+  }
   const paxGid = pax.get(PAX_KEY_GID);
   const gid = paxGid !== undefined ? Number(paxGid) : parsed.gid;
+  if (!Number.isInteger(gid) || gid < 0) {
+    throw new TarCorruptionError(`Invalid gid value: ${paxGid ?? parsed.gid}`);
+  }
 
   return {
     name,
@@ -242,6 +248,7 @@ export function readTarEntries(
                 const fileSource = makeFileSource(
                   reader,
                   merged.size,
+                  options.signal,
                   () => {
                     // Called when the file source completes (drained or
                     // returned). Pad bytes still need to be skipped before
@@ -315,6 +322,12 @@ export function readTarEntries(
             }
           } catch (err) {
             await reader.finish();
+            // If the signal fired mid-block, abortable() ends the
+            // underlying stream early and the byte reader reports it as
+            // truncation. The consumer asked to stop — say so.
+            if (options.signal?.aborted && !(err instanceof TarAbortError)) {
+              throw new TarAbortError();
+            }
             throw err;
           }
         },
@@ -341,6 +354,7 @@ export function readTarEntries(
 function makeFileSource(
   reader: ByteReader,
   size: number,
+  signal: AbortSignal | undefined,
   onComplete: () => void,
   onAbandon: (remaining: number) => void,
 ): Source<Uint8Array> {
@@ -360,20 +374,32 @@ function makeFileSource(
           if (completed || abandoned) {
             return { value: undefined, done: true };
           }
-          if (remaining === 0) {
-            // Skip padding; signal complete to the outer iterator.
-            const pad = padBytes(size);
-            if (pad > 0) {
-              await reader.skip(pad);
-            }
-            completed = true;
-            onComplete();
-            return { value: undefined, done: true };
+          if (signal?.aborted) {
+            throw new TarAbortError();
           }
-          const want = Math.min(remaining, CHUNK_TARGET);
-          const chunk = await reader.readExact(want);
-          remaining -= chunk.length;
-          return { value: chunk, done: false };
+          try {
+            if (remaining === 0) {
+              // Skip padding; signal complete to the outer iterator.
+              const pad = padBytes(size);
+              if (pad > 0) {
+                await reader.skip(pad);
+              }
+              completed = true;
+              onComplete();
+              return { value: undefined, done: true };
+            }
+            const want = Math.min(remaining, CHUNK_TARGET);
+            const chunk = await reader.readExact(want);
+            remaining -= chunk.length;
+            return { value: chunk, done: false };
+          } catch (err) {
+            // Same conversion as the entry iterator: truncation caused by
+            // the abort signal surfaces as TarAbortError, not corruption.
+            if (signal?.aborted && !(err instanceof TarAbortError)) {
+              throw new TarAbortError();
+            }
+            throw err;
+          }
         },
 
         async return(): Promise<IteratorResult<Uint8Array>> {

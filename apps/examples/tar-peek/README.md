@@ -25,10 +25,14 @@ doesn't.
 ## How it works
 
 ```
-fetch(tarball)  →  fromReadableStream  →  gunzip()  →  tap  →  readTarEntries
-                                                                    │
-                                              for await (entry) emit NDJSON
+fetch(tarball)  →  fromReadableStream  →  gunzip(inflator)  →  tap  →  readTarEntries
+                                                                            │
+                                                      for await (entry) emit NDJSON
 ```
+
+`gunzip` is `@culvert/gzip`'s BYOC framing layer — the raw DEFLATE codec is
+injected. This app uses the pako wrapper from the gzip README
+(`app/lib/inflator.ts`).
 
 The server (a React Router resource route at `/api/peek`) holds open a single
 NDJSON response. Three event types interleave on the wire:
@@ -55,44 +59,23 @@ files at any size without breaking a sweat.
 
 ## Setup
 
-This package depends on `@culvert/tar` and `@culvert/stream` via workspace
-protocol. The intended layout:
+This app lives at `apps/examples/tar-peek/` and is a workspace member — its
+`@culvert/*` dependencies resolve to the local packages in `packages/*`, so the
+demo always exercises the code in this repo, not published versions.
 
-```
-culvert/
-├── packages/
-│   ├── stream/
-│   ├── crc32/
-│   ├── zip/
-│   └── tar/
-└── apps/
-    └── peeker/   ← drop this here
-```
-
-Add `apps/*` to the workspace globs in the root `package.json`:
-
-```json
-{
-  "workspaces": ["packages/*", "apps/*"]
-}
-```
-
-Then from the repo root:
+From the repo root:
 
 ```sh
 npm install
-npm run build --workspaces
-cd apps/peeker
-npm run dev
+npm run build:all
+npm run ex:tar-peek-dev
 ```
 
-Open the URL the dev server prints. The stream starts on page load.
+Open the URL the dev server prints. The stream starts on page load. Pick a
+different package with the `?package=` query param (`?package=react`).
 
 ## V2 ideas
 
-- Configurable package via query param (`?package=react`). The route is already
-  isolated; add a search param, parse it in the loader, validate, pass to
-  `resolveTarball`. The pipeline doesn't change.
 - Side-by-side run vs. a buffering library. Two `<MemoryChart>`s, two pipelines,
   one window. Sells the case even harder.
 - Drag-and-drop a local `.tar.gz`. Same pipeline, different source. Browser-side

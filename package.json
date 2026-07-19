@@ -5,17 +5,18 @@
   "description": "",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/examples/*"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "build:all": "npm run build -ws",
-    "ex:tar-peek-dev": "cd apps/examples/tar-peek/ && npm run dev"
+    "ex:tar-peek-dev": "npm run dev --workspace @culvert/peeker"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0",
+    "vitest": "^3.0.0",
     "@types/node": "^25.5.2"
   }
 }
