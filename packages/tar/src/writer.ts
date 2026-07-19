@@ -33,7 +33,6 @@ import type {
 } from "./types.js";
 import {
   encodeUstarHeader,
-  fitsInUstar,
   truncateUtf8,
   trySplitPath,
   type UstarHeaderFields,

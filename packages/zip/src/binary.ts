@@ -1,45 +1,19 @@
-import { dateToDos } from "./dos-time.js";
-import type { CentralDirectoryEntry } from "./types.js";
-
-// ---------------------------------------------------------------------------
-// ZIP format signatures
-// ---------------------------------------------------------------------------
-
-const SIG_LOCAL_FILE = 0x04034b50;
-const SIG_DATA_DESCRIPTOR = 0x08074b50;
-const SIG_CENTRAL_DIR = 0x02014b50;
-const SIG_END_OF_CENTRAL_DIR = 0x06054b50;
-const SIG_ZIP64_END_OF_CENTRAL_DIR = 0x06064b50;
-const SIG_ZIP64_END_OF_CENTRAL_DIR_LOCATOR = 0x07064b50;
-
-export {
+import {
+  FLAG_UTF8,
   SIG_CENTRAL_DIR,
-  SIG_DATA_DESCRIPTOR,
   SIG_END_OF_CENTRAL_DIR,
   SIG_LOCAL_FILE,
-};
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** General purpose bit flag: bit 3 = data descriptor follows file data. */
-const FLAG_DATA_DESCRIPTOR = 1 << 3;
-
-/** General purpose bit flag: bit 11 = UTF-8 filename encoding. */
-const FLAG_UTF8 = 1 << 11;
-
-/** Version needed to extract: 2.0 for deflate, data descriptors. */
-const VERSION_NEEDED = 20;
-
-/** Version needed for ZIP64. */
-const VERSION_NEEDED_ZIP64 = 45;
-
-/** Version made by: 3.0 (ZIP spec 6.3.x), upper byte 0 = MS-DOS compat. */
-const VERSION_MADE_BY = 30;
-
-const ZIP64_MAGIC_16 = 0xffff;
-const ZIP64_MAGIC_32 = 0xffffffff;
+  SIG_ZIP64_END_OF_CENTRAL_DIR,
+  SIG_ZIP64_END_OF_CENTRAL_DIR_LOCATOR,
+  VERSION_MADE_BY,
+  VERSION_NEEDED,
+  VERSION_NEEDED_ZIP64,
+  ZIP64_EXTRA_FIELD_TAG,
+  ZIP64_MAGIC_16,
+  ZIP64_MAGIC_32,
+} from "./constants.js";
+import { dateToDos } from "./dos-time.js";
+import type { CentralDirectoryEntry } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -116,43 +90,10 @@ export function buildLocalFileHeader(
 
   if (zip64) {
     const extraOffset = 30 + name.length;
-    writeUint16(view, extraOffset, 0x0001); // ZIP64 extra field tag
+    writeUint16(view, extraOffset, ZIP64_EXTRA_FIELD_TAG);
     writeUint16(view, extraOffset + 2, 16); // data size
     writeUint64(view, extraOffset + 4, uncompressedSize);
     writeUint64(view, extraOffset + 12, compressedSize);
-  }
-
-  return buf;
-}
-
-// ---------------------------------------------------------------------------
-// Data descriptor
-//
-// Written after the file data. Contains the actual CRC and sizes.
-// Uses the optional signature for maximum compatibility.
-// ---------------------------------------------------------------------------
-
-export function buildDataDescriptor(
-  crc32: number,
-  compressedSize: number,
-  uncompressedSize: number,
-): Uint8Array {
-  const zip64 =
-    compressedSize >= ZIP64_MAGIC_32 || uncompressedSize >= ZIP64_MAGIC_32;
-
-  const size = zip64 ? 24 : 16; // signature(4) + crc(4) + sizes(8 or 16)
-  const buf = new Uint8Array(size);
-  const view = new DataView(buf.buffer);
-
-  writeUint32(view, 0, SIG_DATA_DESCRIPTOR);
-  writeUint32(view, 4, crc32);
-
-  if (zip64) {
-    writeUint64(view, 8, compressedSize);
-    writeUint64(view, 16, uncompressedSize);
-  } else {
-    writeUint32(view, 8, compressedSize);
-    writeUint32(view, 12, uncompressedSize);
   }
 
   return buf;
@@ -198,7 +139,7 @@ export function buildCentralDirectoryEntry(
 
   if (zip64) {
     const extraOffset = 46 + entry.name.length;
-    writeUint16(view, extraOffset, 0x0001); // ZIP64 extra field tag
+    writeUint16(view, extraOffset, ZIP64_EXTRA_FIELD_TAG);
     writeUint16(view, extraOffset + 2, 24); // extra field data size
     writeUint64(view, extraOffset + 4, entry.uncompressedSize);
     writeUint64(view, extraOffset + 12, entry.compressedSize);

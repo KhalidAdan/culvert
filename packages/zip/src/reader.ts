@@ -1,8 +1,12 @@
 import { CRC32 } from "@culvert/crc32";
 import type { Source } from "@culvert/stream";
 
-import { SIG_DATA_DESCRIPTOR, SIG_LOCAL_FILE } from "./binary.js";
 import { StreamingByteReader } from "./byte-reader.js";
+import {
+  FLAG_DATA_DESCRIPTOR,
+  SIG_DATA_DESCRIPTOR,
+  SIG_LOCAL_FILE,
+} from "./constants.js";
 import { identityTransform, inflateRaw } from "./deflate.js";
 import { dosToDate } from "./dos-time.js";
 import { ZipCorruptionError } from "./errors.js";
@@ -23,13 +27,13 @@ import type { ZipEntry } from "./types.js";
 //
 // Lazy properties (compressedSize, uncompressedSize, crc32) return 0
 // with a console.warn() until the entry source is fully consumed.
+//
+// No ZIP64 support: sizes are read from the 32-bit local header fields
+// and the extra field is skipped, so entries >= 4 GiB are unreadable
+// here. Use openZip() for large archives.
 // ---------------------------------------------------------------------------
 
 const decoder = new TextDecoder();
-
-/** General purpose bit flags */
-const FLAG_DATA_DESCRIPTOR = 1 << 3;
-const FLAG_UTF8 = 1 << 11;
 
 interface LocalHeaderInfo {
   name: string;

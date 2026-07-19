@@ -4,9 +4,6 @@
 // Every magic number in the ZIP spec, named and documented. If you're
 // reading this file, you can trace any constant back to PKWARE's
 // APPNOTE.TXT (current version 6.3.10).
-//
-// Existing code in binary.ts and reader.ts defines some of these
-// locally — a future refactor should import from here instead.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

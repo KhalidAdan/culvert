@@ -66,7 +66,7 @@ export function readUint64LE(buf: Uint8Array, offset: number): number {
   // Number.MAX_SAFE_INTEGER = 2^53 - 1; hi < 2^21 fits safely.
   if (hi >= 0x200000) {
     throw new ZipCorruptionError(
-      "ZIP64 value exceeds Number.MAX_SAFE_INTEGER (9 PiB). " +
+      "ZIP64 value exceeds Number.MAX_SAFE_INTEGER (~8 PiB). " +
         "This implementation represents 64-bit sizes as JavaScript numbers.",
     );
   }

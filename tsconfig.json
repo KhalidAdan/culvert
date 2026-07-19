@@ -4,6 +4,7 @@
     { "path": "packages/crc32" },
     { "path": "packages/stream" },
     { "path": "packages/zip" },
+    { "path": "packages/tar" },
     { "path": "packages/gzip" }
   ]
 }

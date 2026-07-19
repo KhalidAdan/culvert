@@ -128,16 +128,6 @@ export class StreamingByteReader {
     })();
   }
 
-  /**
-   * Drain and discard `n` bytes from the stream.
-   * Used to skip file data when the consumer doesn't read an entry.
-   */
-  async skip(n: number): Promise<void> {
-    for await (const _ of this.readBytesAsSource(n)) {
-      // intentionally empty — consumption by another name
-    }
-  }
-
   /** Returns true if there's more data available. */
   async hasMoreData(): Promise<boolean> {
     if (this.buffer.length > 0) return true;
