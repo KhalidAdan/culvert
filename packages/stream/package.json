@@ -1,6 +1,6 @@
 ﻿{
   "name": "@culvert/stream",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "The missing standard library for streaming in JavaScript.",
   "repository": {
     "type": "git",

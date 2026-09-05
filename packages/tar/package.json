@@ -1,6 +1,6 @@
 ﻿{
   "name": "@culvert/tar",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Streaming tar reader and writer. Constant memory. ustar + PAX. Strict-by-default path validation.",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
-    "@culvert/stream": "*"
+    "@culvert/stream": "^0.2.0"
   },
   "keywords": [
     "tar",
