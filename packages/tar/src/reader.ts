@@ -2,6 +2,7 @@ import { abortable, type Source } from "@culvert/stream";
 import { byteReader, isAllZeros, type ByteReader } from "./byte-reader.js";
 import {
   BLOCK_SIZE,
+  MAX_PAX_HEADER_SIZE,
   PAX_KEY_GID,
   PAX_KEY_LINKPATH,
   PAX_KEY_MTIME,
@@ -71,7 +72,11 @@ function mergeFields(
   // Size: PAX 'size' overrides ustar size (decimal vs octal).
   const paxSize = pax.get(PAX_KEY_SIZE);
   const size = paxSize !== undefined ? Number(paxSize) : parsed.size;
-  if (!Number.isFinite(size) || size < 0) {
+  // isInteger, not just isFinite: a fractional size (e.g. PAX "size=1.5")
+  // makes the byte accounting never reach zero — the entry source then
+  // yields empty chunks in an unbounded loop. The writer already rejects
+  // fractional sizes; the reader faces hostile input and must too.
+  if (!Number.isInteger(size) || size < 0) {
     throw new TarCorruptionError(
       `Invalid size value: ${paxSize ?? parsed.size}`,
     );
@@ -186,26 +191,39 @@ export function readTarEntries(
                 }
 
                 // Magic verification — catches crafted blocks that pass
-                // checksum but aren't actually tar headers.
-                if (parsed.magic !== "ustar" && parsed.magic !== "ustar  ") {
+                // checksum but aren't actually tar headers. The 6-byte
+                // magic field holds "ustar\0" (POSIX) or "ustar " (GNU —
+                // its second space and NUL live in the version field), so
+                // the GNU value parses with exactly ONE trailing space.
+                if (parsed.magic !== "ustar" && parsed.magic !== "ustar ") {
                   throw new TarCorruptionError(
                     `Invalid ustar magic: ${JSON.stringify(parsed.magic)} ` +
-                      `(expected "ustar" or GNU "ustar  ")`,
+                      `(expected POSIX "ustar" or GNU "ustar ")`,
                   );
                 }
               }
 
-              // PAX-typeflag entries are consumed internally.
-              if (parsed.typeflag === TYPEFLAG_PAX_EXTENDED) {
+              // PAX-typeflag entries are consumed internally. Their data
+              // is buffered whole for record parsing, and the declared
+              // size is attacker-controlled (up to 8 GiB in octal) — cap
+              // it. Real PAX headers are a few hundred bytes.
+              if (
+                parsed.typeflag === TYPEFLAG_PAX_EXTENDED ||
+                parsed.typeflag === TYPEFLAG_PAX_GLOBAL
+              ) {
+                if (parsed.size > MAX_PAX_HEADER_SIZE) {
+                  throw new TarCorruptionError(
+                    `PAX extended header too large: ${parsed.size} bytes ` +
+                      `(limit ${MAX_PAX_HEADER_SIZE})`,
+                  );
+                }
                 const data = await reader.readExact(parsed.size);
                 await reader.skip(padBytes(parsed.size));
-                pax.applyPending(parsePaxRecords(data));
-                continue;
-              }
-              if (parsed.typeflag === TYPEFLAG_PAX_GLOBAL) {
-                const data = await reader.readExact(parsed.size);
-                await reader.skip(padBytes(parsed.size));
-                pax.applyGlobal(parsePaxRecords(data));
+                if (parsed.typeflag === TYPEFLAG_PAX_EXTENDED) {
+                  pax.applyPending(parsePaxRecords(data));
+                } else {
+                  pax.applyGlobal(parsePaxRecords(data));
+                }
                 continue;
               }
 
@@ -224,12 +242,12 @@ export function readTarEntries(
                     `Hostile path rejected: ${policyResult.message}`,
                   );
                 }
-                // Function form: skip this entry.
-                if (
-                  merged.typeflag === TYPEFLAG_FILE ||
-                  merged.typeflag === TYPEFLAG_FILE_OLD ||
-                  merged.typeflag === TYPEFLAG_CONTIGUOUS
-                ) {
+                // Function form: skip this entry — including its data
+                // section for ANY data-bearing typeflag (GNU 'L'/'K',
+                // vendor flags), mirroring the unknown-entry emit path.
+                // Leaving the data unread would desync the stream: the
+                // entry's bytes would be parsed as the next header.
+                if (merged.size > 0) {
                   await reader.skip(merged.size + padBytes(merged.size));
                 }
                 continue;

@@ -43,6 +43,14 @@ export function csvParse<T = CsvRow>(
   } = options;
 
   validateDialect({ delimiter, quote, comment });
+  if (Array.isArray(headers)) {
+    const dup = findDuplicate(headers);
+    if (dup !== null) {
+      throw new RangeError(
+        `headers array contains duplicate key ${JSON.stringify(dup)}`,
+      );
+    }
+  }
 
   const handler = typeof onMalformed === "function" ? onMalformed : null;
   const mode: MalformedMode =
@@ -78,15 +86,38 @@ export function csvParse<T = CsvRow>(
         if (token.fields === null) {
           // Tokenizer-level malformed row (handler mode only).
           const substitute = handler!(token.error!, token.raw);
-          if (substitute !== null) yield substitute as T;
+          if (substitute === null) continue;
+          if (awaitingHeaderRow) {
+            // The substitute stands in for the header row. Anything but
+            // an array of keys is incoherent there — fail loudly rather
+            // than mis-keying the whole file.
+            if (!Array.isArray(substitute)) {
+              throw new CsvSyntaxError(
+                "onMalformed returned a record for the header row; " +
+                  "a header substitute must be a string[] of keys",
+              );
+            }
+            headerKeys = substitute;
+            awaitingHeaderRow = false;
+            continue;
+          }
+          yield substitute as T;
           continue;
         }
 
         const fields = token.fields;
 
-        if (skipEmptyLines && fields.length === 0) continue;
+        // Zero-field rows (blank lines) are never a header and never a
+        // length mismatch: a blank first line used to become a
+        // zero-column header set, silently emptying every row.
+        if (fields.length === 0) {
+          if (skipEmptyLines) continue;
+          yield (wantObjects ? {} : fields) as T;
+          continue;
+        }
 
         if (awaitingHeaderRow) {
+          rejectDuplicateHeaders(fields, mode, rowNumber);
           headerKeys = fields;
           awaitingHeaderRow = false;
           continue;
@@ -94,13 +125,6 @@ export function csvParse<T = CsvRow>(
 
         if (!wantObjects) {
           yield fields as T;
-          continue;
-        }
-
-        // Record mode.
-        if (fields.length === 0) {
-          // Blank line: yields an empty object, not a length mismatch.
-          yield {} as T;
           continue;
         }
 
@@ -140,6 +164,37 @@ export function csvParse<T = CsvRow>(
     tokenizer.end();
     yield* handleRows(tokenizer.drain());
   };
+}
+
+function findDuplicate(keys: readonly string[]): string | null {
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (seen.has(key)) return key;
+    seen.add(key);
+  }
+  return null;
+}
+
+/**
+ * Duplicate header names make record projection silently drop every
+ * earlier duplicate column (last assignment wins). The strict default
+ * is loud about data loss; permissive and handler modes keep the
+ * last-wins behavior deliberately.
+ */
+function rejectDuplicateHeaders(
+  keys: readonly string[],
+  mode: MalformedMode,
+  rowNumber: number,
+): void {
+  if (mode !== "strict") return;
+  const dup = findDuplicate(keys);
+  if (dup !== null) {
+    throw new CsvSyntaxError(
+      `Duplicate header name ${JSON.stringify(dup)} in row ${rowNumber}: ` +
+        `projection would silently drop a column. ` +
+        `Use onMalformed: "permissive" for last-wins, or supply headers: string[].`,
+    );
+  }
 }
 
 function decodeChunk(

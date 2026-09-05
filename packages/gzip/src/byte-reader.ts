@@ -98,15 +98,53 @@ export function createByteReader(
     return result;
   }
 
-  async function peekBytes(n: number): Promise<Uint8Array | null> {
-    try {
-      const bytes = await readExact(n);
-      pushBackStack.push(bytes);
-      return bytes;
-    } catch {
-      // EOF before n bytes — not an error for peek, just means no data
-      return null;
+  /**
+   * Read exactly `n` bytes, or null on clean EOF before `n` (restoring
+   * any bytes consumed along the way). Source errors propagate — a
+   * network failure must NEVER masquerade as end-of-stream, or callers
+   * report success on truncated data.
+   */
+  async function tryReadExact(n: number): Promise<Uint8Array | null> {
+    if (n === 0) return new Uint8Array(0);
+
+    const parts: Uint8Array[] = [];
+    let have = 0;
+
+    while (have < n) {
+      const chunk = await pull(); // source errors propagate from here
+      if (chunk === null) {
+        // Clean EOF — restore consumed bytes (LIFO) so the stream is
+        // exactly as it was before the attempt.
+        for (let i = parts.length - 1; i >= 0; i--) {
+          pushBackStack.push(parts[i]!);
+        }
+        return null;
+      }
+      if (chunk.length <= n - have) {
+        parts.push(chunk);
+        have += chunk.length;
+      } else {
+        parts.push(chunk.subarray(0, n - have));
+        pushBackStack.push(chunk.subarray(n - have));
+        have = n;
+      }
     }
+
+    if (parts.length === 1) return parts[0]!;
+    const result = new Uint8Array(n);
+    let offset = 0;
+    for (const p of parts) {
+      result.set(p, offset);
+      offset += p.length;
+    }
+    return result;
+  }
+
+  async function peekBytes(n: number): Promise<Uint8Array | null> {
+    const bytes = await tryReadExact(n);
+    if (bytes === null) return null;
+    pushBackStack.push(bytes);
+    return bytes;
   }
 
   function pushBack(chunk: Uint8Array): void {

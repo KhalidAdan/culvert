@@ -51,6 +51,14 @@ export function csvStringify(
   }
 
   function formatRow(fields: readonly unknown[]): string {
+    // A lone empty field would serialize to a bare newline, which parses
+    // back as a ZERO-field row — quoting it keeps the round-trip honest.
+    if (fields.length === 1) {
+      const value = fields[0];
+      const s = value === null || value === undefined ? "" : String(value);
+      if (s === "") return escaped + newline;
+    }
+
     let line = "";
     for (let i = 0; i < fields.length; i++) {
       if (i > 0) line += delimiter;

@@ -200,10 +200,14 @@ describe("digest idempotency", () => {
 // ---------------------------------------------------------------------------
 // 8. Residue (magic check) value
 //    When a CRC is appended to its message in little-endian byte order,
-//    the CRC of the combined data is always 0xDEBB20E3.
+//    the CRC register (before the final XorOut) always lands on the
+//    residue 0xDEBB20E3 — so the algorithm's OUTPUT over message+CRC is
+//    0xDEBB20E3 ^ 0xFFFFFFFF = 0x2144DF1C. The two constants are easy
+//    to conflate; the assertions below use the post-XorOut value, which
+//    is what digest() actually returns (verified against zlib.crc32).
 // ---------------------------------------------------------------------------
 describe("residue constant", () => {
-  it("CRC of message + LE CRC equals 0xDEBB20E3", () => {
+  it("CRC of message + LE CRC equals the post-XorOut residue 0x2144DF1C", () => {
     const msg = ascii("123456789");
     const msgCrc = crc32(msg);
 
@@ -215,7 +219,7 @@ describe("residue constant", () => {
     combined[msg.length + 2] = (msgCrc >>> 16) & 0xff;
     combined[msg.length + 3] = (msgCrc >>> 24) & 0xff;
 
-    expect(crc32(combined)).toBe(0xdebb20e3 ^ 0xffffffff);
+    expect(crc32(combined)).toBe(0x2144df1c); // = 0xdebb20e3 ^ 0xffffffff
   });
 
   it("residue holds for a different message", () => {

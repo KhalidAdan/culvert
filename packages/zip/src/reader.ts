@@ -128,6 +128,24 @@ export function readZipEntries(
 
         const header = await parseLocalHeader(reader);
 
+        // Streamed archives (Java ZipOutputStream, most server-side zip
+        // streamers) set flag bit 3 and defer sizes to a data descriptor
+        // after the data. Without a size in the local header there is no
+        // way to know where the data ends in a forward pass — proceeding
+        // would misparse file bytes as the descriptor and report a bogus
+        // CRC mismatch on a valid archive. Fail honestly instead.
+        if (
+          header.hasDataDescriptor &&
+          header.compressedSize === 0 &&
+          header.uncompressedSize === 0
+        ) {
+          throw new ZipCorruptionError(
+            `Entry "${header.name}" defers its sizes to a data descriptor, ` +
+              `which the forward-only reader cannot stream. ` +
+              `Use openZip() for this archive.`,
+          );
+        }
+
         // --- State for lazy properties ---
         let consumed = false;
         let finalCrc = 0;
@@ -161,29 +179,41 @@ export function readZipEntries(
 
         const compressedSize = header.compressedSize;
 
-        // Track whether this entry's data has been consumed
+        // Track whether this entry's data has been consumed, and how
+        // many compressed bytes were actually pulled from the stream —
+        // if the consumer abandons the entry mid-read, the difference
+        // must be skipped byte-for-byte before the next header.
         let dataConsumed = false;
+        let descriptorConsumed = false;
+        let compressedBytesPulled = 0;
 
         const entrySource: Source<Uint8Array> = (async function* () {
           // Get the raw compressed bytes as a source
           const compressedSource = reader.readBytesAsSource(compressedSize);
 
-          // Decompress
-          const decompress =
-            header.compressionMethod === 0 ? identityTransform() : inflateRaw();
+          // Decompress. Anything but store (0) and deflate (8) would
+          // either yield raw compressed bytes as if stored or feed
+          // garbage to the inflater — refuse it by name instead.
+          let decompress;
+          if (header.compressionMethod === 0) {
+            decompress = identityTransform();
+          } else if (header.compressionMethod === 8) {
+            decompress = inflateRaw();
+          } else {
+            throw new ZipCorruptionError(
+              `Unsupported compression method ${header.compressionMethod} ` +
+                `for "${header.name}": only store (0) and deflate (8) are supported`,
+            );
+          }
 
           // Track CRC and sizes through the pipeline
           const crc = new CRC32();
           let rawSize = 0;
-          let compSize = 0;
 
-          // We need to collect decompressed chunks and yield them,
-          // while also tracking compressed size.
-          //
-          // Wrap compressed source with a size tracker, then decompress
+          // Wrap compressed source with a consumption tracker, then decompress
           const trackedCompressed: Source<Uint8Array> = (async function* () {
             for await (const chunk of compressedSource) {
-              compSize += chunk.length;
+              compressedBytesPulled += chunk.length;
               yield chunk;
             }
           })();
@@ -199,6 +229,7 @@ export function readZipEntries(
           // --- Read data descriptor if present ---
           if (header.hasDataDescriptor) {
             const desc = await parseDataDescriptor(reader);
+            descriptorConsumed = true;
             finalCrc = desc.crc32;
             finalCompressedSize = desc.compressedSize;
             finalUncompressedSize = desc.uncompressedSize;
@@ -243,10 +274,22 @@ export function readZipEntries(
 
         // If the consumer didn't drain this entry's source, do it now.
         // Skipping isn't free — it's consumption by another name.
+        //
+        // Crucially this drains at the BYTE level, not by re-iterating
+        // entrySource: if the consumer broke out mid-entry, that
+        // generator is already closed and re-iterating it is a silent
+        // no-op — which used to leave unread file bytes to be parsed
+        // as the next header, losing every remaining entry.
         if (!dataConsumed) {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          for await (const _ of entrySource) {
-            // drain
+          const remaining = compressedSize - compressedBytesPulled;
+          if (remaining > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            for await (const _ of reader.readBytesAsSource(remaining)) {
+              // drain
+            }
+          }
+          if (header.hasDataDescriptor && !descriptorConsumed) {
+            await parseDataDescriptor(reader);
           }
         }
       }

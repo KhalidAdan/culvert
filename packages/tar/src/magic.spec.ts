@@ -80,18 +80,22 @@ describe("magic validation", () => {
   });
 
   it("strict accepts GNU ustar-space magic", async () => {
+    // GNU-format headers store 'u','s','t','a','r',' ' in the 6-byte
+    // magic field (the second space and NUL live in the version field).
+    // This test used to assert REJECTION under its current title,
+    // masking a bug that made every `tar --format=gnu` archive fail.
     const bytes = await buildOne();
     const header = bytes.subarray(0, 512);
 
     header.set([0x75, 0x73, 0x74, 0x61, 0x72, 0x20], MAGIC_OFFSET); // "ustar "
     fixChecksum(header);
 
-    const promise = (async () => {
-      for await (const _ of readTarEntries(from([bytes]))) {
-        // drain
-      }
-    })();
-    await expect(promise).rejects.toThrow(TarCorruptionError);
+    const out: string[] = [];
+    for await (const e of readTarEntries(from([bytes]))) {
+      out.push(e.name);
+      if (e.kind === "file") await pipe(e.source, collectBytes());
+    }
+    expect(out).toEqual(["x"]);
   });
 
   it("strict rejects garbage magic", async () => {

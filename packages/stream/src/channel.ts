@@ -128,6 +128,15 @@ export function channel<T>(): [ChannelWriter<T>, Source<T>] {
         pendingRead = null;
         reader.reject(err);
       }
+
+      // If a producer is parked in write(), unpark it — its value will
+      // never be delivered, but stranding the producer forever is worse.
+      // (Mirrors return()'s handling of a parked write.)
+      if (pendingWrite) {
+        const { resolve } = pendingWrite;
+        pendingWrite = null;
+        resolve();
+      }
     },
   };
 
@@ -167,6 +176,15 @@ export function channel<T>(): [ChannelWriter<T>, Source<T>] {
             const { resolve } = pendingWrite;
             pendingWrite = null;
             resolve(); // unblock the producer (they'll see done=true)
+          }
+
+          // An in-flight next() must settle too — the async-iterator
+          // protocol says a pending next resolves before return does,
+          // and leaving it parked strands whoever awaits it.
+          if (pendingRead) {
+            const reader = pendingRead;
+            pendingRead = null;
+            reader.resolve({ done: true, value: undefined });
           }
 
           return Promise.resolve({ done: true, value: undefined });

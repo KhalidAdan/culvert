@@ -55,6 +55,7 @@ export function gzip(
 
     const crc = new CRC32();
     let totalSize = 0;
+    let deflatedAnything = false;
 
     const iter = source[Symbol.asyncIterator]();
     let next = await iter.next();
@@ -73,6 +74,17 @@ export function gzip(
       const isFinal = next.done === true;
 
       const compressed = deflator.deflate(chunk, isFinal);
+      deflatedAnything = true;
+      if (compressed.length > 0) {
+        yield compressed;
+      }
+    }
+
+    // A source that yields zero chunks (a 0-byte file read) never enters
+    // the loop — but RFC 1952 requires every member to contain a DEFLATE
+    // stream, so emit the empty final block the codec produces for it.
+    if (!deflatedAnything) {
+      const compressed = deflator.deflate(new Uint8Array(0), true);
       if (compressed.length > 0) {
         yield compressed;
       }

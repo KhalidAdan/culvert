@@ -79,17 +79,28 @@ export function gunzip(
 
       // --- Skip optional fields per FLG bits ---
       // Order per RFC 1952 §2.3.1: FEXTRA, FNAME, FCOMMENT, FHCRC
+      //
+      // When FHCRC is present, every header byte up to the CRC16 field
+      // feeds a CRC-32 whose low 16 bits must match it (§2.3.1). The
+      // producer supplied that checksum precisely so header corruption
+      // is detectable — discarding it would leave strict mode blind to
+      // a flipped bit in MTIME, FNAME, or the extra field.
+      const headerCrc = header.flg & FHCRC ? new CRC32() : null;
+      headerCrc?.update(headerBuf);
 
       if (header.flg & FEXTRA) {
         const lenBuf = await reader.readExact(2);
+        headerCrc?.update(lenBuf);
         const extraLen = lenBuf[0]! | (lenBuf[1]! << 8);
-        await reader.readExact(extraLen); // discard
+        const extra = await reader.readExact(extraLen); // content discarded
+        headerCrc?.update(extra);
       }
 
       if (header.flg & FNAME) {
         // Read until null terminator
         while (true) {
           const byte = await reader.readExact(1);
+          headerCrc?.update(byte);
           if (byte[0] === 0x00) break;
         }
       }
@@ -97,12 +108,24 @@ export function gunzip(
       if (header.flg & FCOMMENT) {
         while (true) {
           const byte = await reader.readExact(1);
+          headerCrc?.update(byte);
           if (byte[0] === 0x00) break;
         }
       }
 
       if (header.flg & FHCRC) {
-        await reader.readExact(2); // discard header CRC-16
+        const crc16Buf = await reader.readExact(2);
+        if (strict) {
+          const stored = crc16Buf[0]! | (crc16Buf[1]! << 8);
+          const computed = headerCrc!.digest() & 0xffff;
+          if (computed !== stored) {
+            throw new GzipCorruptionError(
+              `Header CRC-16 mismatch: expected 0x${stored
+                .toString(16)
+                .padStart(4, "0")}, got 0x${computed.toString(16).padStart(4, "0")}`,
+            );
+          }
+        }
       }
 
       // --- Inflate via codec ---

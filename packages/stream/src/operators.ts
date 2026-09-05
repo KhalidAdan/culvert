@@ -51,6 +51,8 @@ export function finalize<T>(fn: () => void | Promise<void>): Transform<T, T> {
 // reason a source might end. pipe()'s existing teardown handles the rest.
 // ---------------------------------------------------------------------------
 
+const ABORTED = Symbol("abortable.aborted");
+
 export function abortable<T>(
   source: Source<T>,
   signal: AbortSignal,
@@ -60,17 +62,36 @@ export function abortable<T>(
 
     const iterator = source[Symbol.asyncIterator]();
 
+    // Race every pull against the signal. Checking only *between* pulls
+    // is not enough: a source that has gone quiet (an idle channel(), a
+    // silent socket) parks the pull forever, and an abort must still end
+    // the stream. Aborting ends the stream cleanly — same as the source
+    // finishing — by design: the signal is just another reason a source
+    // might end, and pipe()'s teardown handles the rest.
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<typeof ABORTED>((resolve) => {
+      onAbort = () => resolve(ABORTED);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+
     try {
       while (true) {
-        if (signal.aborted) return;
-
-        const result = await iterator.next();
+        const result = await Promise.race([iterator.next(), aborted]);
+        if (result === ABORTED || signal.aborted) return;
         if (result.done) return;
 
         yield result.value;
       }
     } finally {
-      await iterator.return?.();
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+      if (signal.aborted) {
+        // The source may still be parked inside next() and unable to
+        // service return() until that pull settles — request teardown
+        // without letting it inherit the hang we just escaped.
+        Promise.resolve(iterator.return?.()).catch(() => {});
+      } else {
+        await iterator.return?.();
+      }
     }
   })();
 }
@@ -292,10 +313,8 @@ export function concat<T>(...sources: Source<T>[]): Source<T> {
 // ---------------------------------------------------------------------------
 // flatMap() — map each item to a sub-source and flatten the results.
 //
-// Earns its place because it subsumes four RxJS operators:
-//   concurrency: 1               → concatMap
-//   concurrency: Infinity         → mergeMap
-//   concurrency: 1, latest: true  → switchMap (drop old, start new)
+// Earns its place because it subsumes RxJS's concatMap (concurrency: 1)
+// and mergeMap (concurrency: Infinity) in one shape.
 //
 // The internal concurrency management — tracking active sub-sources,
 // tearing them down on error or cancellation, coordinating
@@ -324,21 +343,38 @@ export function flatMap<I, O>(
 
   // Concurrent — substantially more complex
   return async function* (source) {
-    type Pending = {
-      index: number;
-      result: IteratorResult<O>;
-    };
+    type InnerWin = { kind: "inner"; index: number; result: IteratorResult<O> };
+    type OuterWin = { kind: "outer"; result: IteratorResult<I> };
 
     const outerIterator = source[Symbol.asyncIterator]();
     const innerIterators = new Map<number, AsyncIterator<O>>();
-    const innerPending = new Map<number, Promise<Pending>>();
+    const innerPending = new Map<number, Promise<InnerWin>>();
 
     let nextIndex = 0;
     let outerDone = false;
 
+    // The outer pull participates in the same race as the inner pulls.
+    // Awaiting it inline would starve inner sources that already have
+    // values ready whenever the outer source is slow — and deadlock
+    // outright if the outer source's progress depends on downstream
+    // consumption. At most one outer pull is in flight, and only while
+    // a concurrency slot is free (backpressure on the outer source).
+    let outerPending: Promise<OuterWin> | null = null;
+
+    const pullOuter = () => {
+      const p: Promise<OuterWin> = outerIterator
+        .next()
+        .then((result) => ({ kind: "outer" as const, result }));
+      p.catch(() => {}); // observed via the race; avoid unhandled-rejection noise
+      outerPending = p;
+    };
+
     const pullInner = (index: number) => {
       const it = innerIterators.get(index)!;
-      const p = it.next().then((result) => ({ index, result }));
+      const p: Promise<InnerWin> = it
+        .next()
+        .then((result) => ({ kind: "inner" as const, index, result }));
+      p.catch(() => {});
       innerPending.set(index, p);
     };
 
@@ -365,36 +401,36 @@ export function flatMap<I, O>(
     };
 
     try {
-      // Seed: pull up to `concurrency` items from outer source
-      while (!outerDone && innerIterators.size < concurrency) {
-        const next = await outerIterator.next();
-        if (next.done) {
-          outerDone = true;
-          break;
-        }
-        startInner(next.value);
-      }
+      pullOuter();
 
-      // Main loop: yield inner results, start new inners as slots open
-      while (innerPending.size > 0) {
-        const winner = await Promise.race(innerPending.values());
-        innerPending.delete(winner.index);
+      while (outerPending !== null || innerPending.size > 0) {
+        const contenders: Promise<InnerWin | OuterWin>[] = [
+          ...innerPending.values(),
+        ];
+        if (outerPending !== null) contenders.push(outerPending);
 
-        if (winner.result.done) {
-          // Inner source exhausted — clean up and maybe start a new one
-          innerIterators.delete(winner.index);
+        const winner = await Promise.race(contenders);
 
-          if (!outerDone && innerIterators.size < concurrency) {
-            const next = await outerIterator.next();
-            if (next.done) {
-              outerDone = true;
-            } else {
-              startInner(next.value);
-            }
+        if (winner.kind === "outer") {
+          outerPending = null;
+          if (winner.result.done) {
+            outerDone = true;
+          } else {
+            startInner(winner.result.value);
+            if (innerIterators.size < concurrency) pullOuter();
           }
         } else {
-          yield winner.result.value;
-          pullInner(winner.index);
+          innerPending.delete(winner.index);
+
+          if (winner.result.done) {
+            // Inner source exhausted — the freed slot lets the outer
+            // source be pulled again (if it isn't already in flight).
+            innerIterators.delete(winner.index);
+            if (!outerDone && outerPending === null) pullOuter();
+          } else {
+            yield winner.result.value;
+            pullInner(winner.index);
+          }
         }
       }
     } finally {
@@ -435,6 +471,10 @@ export function buffer<T>(
       let sourceDone = false;
       let sourceError: unknown;
 
+      // Set at teardown: tells a producer parked on the suspend promise
+      // (or returning from a pull) to exit instead of continuing.
+      let stopped = false;
+
       // Consumer resolve — signals that the consumer is waiting for data
       let consumerResolve: (() => void) | undefined;
 
@@ -445,6 +485,7 @@ export function buffer<T>(
         try {
           while (true) {
             const next = await iterator.next();
+            if (stopped) return;
             if (next.done) {
               sourceDone = true;
               consumerResolve?.();
@@ -458,6 +499,7 @@ export function buffer<T>(
                   await new Promise<void>((r) => {
                     producerResolve = r;
                   });
+                  if (stopped) return;
                   break;
 
                 case "drop":
@@ -507,8 +549,16 @@ export function buffer<T>(
           }
         }
       } finally {
-        await iterator.return?.();
-        await producerDone;
+        // Unpark a suspended producer BEFORE awaiting it — otherwise
+        // producerDone can never settle and teardown hangs forever.
+        stopped = true;
+        producerResolve?.();
+        producerResolve = undefined;
+        try {
+          await iterator.return?.();
+        } finally {
+          await producerDone;
+        }
       }
     })();
   };

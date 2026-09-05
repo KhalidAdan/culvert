@@ -51,13 +51,28 @@ export function fromReadableStream<T>(stream: ReadableStream<T>): Source<T> {
   // Safari fallback: manually read via the reader
   return (async function* () {
     const reader = stream.getReader();
+    let finished = false;
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) return;
+        if (done) {
+          finished = true;
+          return;
+        }
         yield value;
       }
     } finally {
+      if (!finished) {
+        // Early termination: cancel the stream so its source stops
+        // producing (a fetch body closes its connection, etc.). The
+        // native-iterator fast path does this automatically; the
+        // fallback must match it.
+        try {
+          await reader.cancel();
+        } catch {
+          // Cancellation failures don't outrank the original exit reason.
+        }
+      }
       reader.releaseLock();
     }
   })();

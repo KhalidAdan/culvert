@@ -95,9 +95,15 @@ export function parseOctal(buf: Uint8Array, offset: number, length: number): num
 
   let result = 0;
   let saw = false;
-  for (let i = 0; i < length; i++) {
+  let i = 0;
+  // POSIX permits leading spaces in octal fields, and historic writers
+  // (old Unix tar, star) emit them — the checksum field in particular
+  // is often "  NNNN\0 ". Treating a leading space as the terminator
+  // read those fields as 0 and rejected valid archives.
+  while (i < length && buf[offset + i] === 0x20) i++;
+  for (; i < length; i++) {
     const c = buf[offset + i]!;
-    // Stop at NUL or space terminators.
+    // Stop at NUL or space terminators (after the digits).
     if (c === 0 || c === 0x20) break;
     if (c < 0x30 || c > 0x37) {
       throw new TarCorruptionError(
