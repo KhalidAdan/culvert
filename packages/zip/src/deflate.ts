@@ -6,7 +6,8 @@ import { ZipCorruptionError } from "./errors.js";
 //
 // Uses CompressionStream("deflate-raw") which is available in:
 //   - All modern browsers (Chrome 80+, Firefox 113+, Safari 16.4+)
-//   - Node.js 18+ (via web streams compat)
+//   - Node.js 20.12+ (the "deflate-raw" format landed in 21.2 and was
+//     backported to 20.12; earlier Node only supports "gzip"/"deflate")
 //   - Deno, Bun, Cloudflare Workers
 //
 // The "raw" variant is what ZIP needs — no zlib header, no gzip wrapper.
