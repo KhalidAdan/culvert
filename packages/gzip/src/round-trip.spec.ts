@@ -59,7 +59,9 @@ describe("gzip/gunzip round-trip", () => {
     expect(decompressed).toEqual(expected);
   });
 
-  it("round-trips 1 MiB of data", async () => {
+  // The test codec is deliberately naive, so 1 MiB takes seconds under
+  // full-suite parallel load — give it room beyond the 5s default.
+  it("round-trips 1 MiB of data", { timeout: 30_000 }, async () => {
     const input = new Uint8Array(1024 * 1024);
     for (let i = 0; i < input.length; i++) {
       input[i] = (i * 7 + 13) & 0xff;
