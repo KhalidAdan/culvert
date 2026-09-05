@@ -5,6 +5,7 @@
     { "path": "packages/stream" },
     { "path": "packages/zip" },
     { "path": "packages/tar" },
-    { "path": "packages/gzip" }
+    { "path": "packages/gzip" },
+    { "path": "packages/csv" }
   ]
 }

@@ -1,0 +1,56 @@
+{
+  "name": "@culvert/csv",
+  "version": "0.1.0",
+  "description": "Streaming CSV parser and stringifier. Bounded memory. RFC 4180 plus the real-world dialects. Strict-by-default malformed-input handling.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KhalidAdan/culvert.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KhalidAdan/culvert/issues"
+  },
+  "homepage": "https://github.com/KhalidAdan/culvert#readme",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@culvert/stream": "*"
+  },
+  "keywords": [
+    "csv",
+    "tsv",
+    "parser",
+    "stringify",
+    "streaming"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "author": "Khalid Adan",
+  "license": "MIT"
+}
