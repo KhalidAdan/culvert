@@ -12,18 +12,26 @@ npm install @culvert/csv
 
 ## Parsing
 
-`csvParse` is a `Transform<Uint8Array, Row>` — a peer of `filter` and
-`map`, not a special parsing stage:
+`csvParse` is a `Transform<Uint8Array, Row>` — a peer of any other
+pipeline stage, not a special parsing layer. Row-level operators like
+filter and map are five-line async generators you write yourself
+(`@culvert/stream` deliberately doesn't ship them):
 
 ```ts
-import { pipe, filter, writeTo } from "@culvert/stream";
+import { pipe, collect } from "@culvert/stream";
 import { csvParse } from "@culvert/csv";
 
-await pipe(
-  response.body,                       // Source<Uint8Array>
+async function* activeOnly(rows: AsyncIterable<Record<string, string>>) {
+  for await (const row of rows) {
+    if (row.status === "active") yield row;
+  }
+}
+
+const active = await pipe(
+  response.body!,                      // Source<Uint8Array>
   csvParse({ headers: true }),         // Transform<Uint8Array, Record<string, string>>
-  filter(row => row.status === "active"),
-  writeTo(database),
+  activeOnly,
+  collect(),
 );
 ```
 
@@ -38,22 +46,29 @@ so the row count is right even when line-driven parsers get it wrong.
   `Record<string, string>`.
 - `headers: string[]` — you supply the keys; no row is consumed.
 
+Blank lines are never consumed as the header — they yield empty
+records (or are dropped with `skipEmptyLines`). Duplicate header names
+throw in strict mode, because record projection would silently drop
+every earlier duplicate column; use `onMalformed: "permissive"` for
+last-wins, or supply `headers: string[]` to override.
+
 ### Every value is a string
 
 CSV has no type system. `dynamicTyping`-style coercion silently turns
 `"01234"` zip codes into `1234`, so we don't ship it. The generic
-parameter types the row's *keys*; coercion belongs in a `map` operator
-where it's visible:
+parameter types the row's *keys*; coercion belongs in your own
+transform, where it's visible:
 
 ```ts
 interface UserRow { id: string; age: string }
 
-pipe(
-  source,
-  csvParse<UserRow>({ headers: ["id", "age"] }),
-  map(row => ({ ...row, age: parseInt(row.age, 10) })),
-  sink,
-);
+async function* coerce(rows: AsyncIterable<UserRow>) {
+  for await (const row of rows) {
+    yield { ...row, age: parseInt(row.age, 10) };
+  }
+}
+
+pipe(source, csvParse<UserRow>({ headers: ["id", "age"] }), coerce, sink);
 ```
 
 ### Malformed input
@@ -73,7 +88,10 @@ csvParse({
 ```
 
 Covers unbalanced quotes, data after a closing quote, and row-length
-mismatches against the header set.
+mismatches against the header set. When the *header row itself* is
+malformed (with `headers: true`), a `string[]` substitute becomes the
+header, and `null` skips the line — the next row is consumed as the
+header instead. A record substitute in header position throws.
 
 ### Dialect options
 
@@ -115,6 +133,13 @@ With `headers: true` the header row is the first record's keys; later
 records are projected onto that key set (missing keys emit empty
 strings, extra keys are dropped). `headers: string[]` supplies the key
 set up front.
+
+A lone empty field is always quoted (`""`), because a bare newline
+would parse back as a zero-field row — round-trips stay honest. One
+caveat minimal quoting can't fix: a field *starting with* a comment
+character is emitted bare, so if the consumer parses with a `comment`
+dialect, that row reads as a comment. Use `quoting: "all"` when
+emitting for comment-aware consumers.
 
 ## Errors
 

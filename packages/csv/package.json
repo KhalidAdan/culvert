@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "@culvert/csv",
   "version": "0.1.0",
   "description": "Streaming CSV parser and stringifier. Bounded memory. RFC 4180 plus the real-world dialects. Strict-by-default malformed-input handling.",
@@ -16,7 +16,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },

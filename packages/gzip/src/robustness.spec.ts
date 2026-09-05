@@ -110,6 +110,17 @@ describe("FHCRC header checksum", () => {
   });
 });
 
+describe("codec error taxonomy", () => {
+  it("a throwing codec surfaces as GzipCorruptionError", async () => {
+    const member = await gzipBytes([encode("valid data")]);
+    // Corrupt the first DEFLATE byte: BFINAL=1, BTYPE=11 (reserved).
+    member[10] = 0x07;
+    await expect(
+      pipe(from([member]), gunzip(createTestInflator()), collectBytes()),
+    ).rejects.toThrow(GzipCorruptionError);
+  });
+});
+
 describe("MTIME encoding", () => {
   function mtimeField(date: Date): number {
     const header = buildGzipHeader({ mtime: date });

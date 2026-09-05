@@ -17,9 +17,14 @@ If you understand that line, you understand Culvert.
 | [`@culvert/stream`](./packages/stream) | Source/Transform/Sink + `pipe()` + 8 operators + `channel()`             |
 | [`@culvert/zip`](./packages/zip)       | Streaming ZIP writer + forward reader + random-access reader with ZIP64  |
 | [`@culvert/tar`](./packages/tar)       | Streaming tar reader and writer — ustar + PAX, strict path policy      |
-| [`@culvert/gzip`](./packages/gzip)     | Streaming gzip compression and decompression — platform DEFLATE, CRC-32 verified |
+| [`@culvert/gzip`](./packages/gzip)     | Streaming gzip framing — BYOC DEFLATE codec, CRC-32 verified, concatenated members |
 | [`@culvert/crc32`](./packages/crc32)   | IEEE 802.3 CRC-32 — streaming-native, zero dependencies                   |
 | [`@culvert/csv`](./packages/csv)       | Streaming CSV parser and stringifier — RFC 4180 + real-world dialects, strict-by-default |
+
+All packages are ESM with TypeScript declarations, and run on Node ≥ 18,
+Deno, Bun, Cloudflare Workers, and browsers. On Node ≥ 20.17 (all
+current LTS lines) `require()` works too, via require(ESM); older
+CommonJS consumers should use dynamic `import()`.
 
 ## Design bet
 

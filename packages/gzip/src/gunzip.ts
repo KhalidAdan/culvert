@@ -144,7 +144,17 @@ export function gunzip(
           );
         }
 
-        const result = inflator.inflate(chunk);
+        // A codec rejecting its input is stream corruption — wrap it in
+        // the taxonomy so callers can catch GzipCorruptionError, not a
+        // codec-specific error type.
+        let result;
+        try {
+          result = inflator.inflate(chunk);
+        } catch (err) {
+          throw new GzipCorruptionError(
+            `DEFLATE data is corrupt: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
 
         if (result.output.length > 0) {
           crc.update(result.output);

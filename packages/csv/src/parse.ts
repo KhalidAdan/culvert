@@ -19,11 +19,10 @@ import { validateDialect } from "./validate.js";
  *
  * @example
  * ```ts
- * await pipe(
- *   fetchBody(),
+ * const rows = await pipe(
+ *   response.body!,
  *   csvParse({ headers: true }),
- *   filter(row => row.status === "active"),
- *   writeTo(database),
+ *   collect(),
  * );
  * ```
  */
