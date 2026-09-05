@@ -1,4 +1,5 @@
 node_modules/
+.handoff/
 *.tgz
 tsconfig.tsbuildinfo
 dist/

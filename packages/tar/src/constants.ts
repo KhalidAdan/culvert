@@ -10,6 +10,14 @@ export const BLOCK_SIZE = 512;
 export const END_OF_ARCHIVE_BLOCKS = 2;
 export const END_OF_ARCHIVE_SIZE = BLOCK_SIZE * END_OF_ARCHIVE_BLOCKS;
 
+/**
+ * Maximum declared size of a PAX extended header ('x'/'g') data section.
+ * PAX data is buffered whole for record parsing and the declared size is
+ * attacker-controlled; real PAX headers are a few hundred bytes, so 1 MiB
+ * is generous while preventing memory-exhaustion attacks.
+ */
+export const MAX_PAX_HEADER_SIZE = 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 // ustar header field offsets
 //

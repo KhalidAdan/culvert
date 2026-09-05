@@ -94,8 +94,11 @@ export function buildGzipHeader(options: BuildHeaderOptions): Uint8Array {
   header[2] = CM_DEFLATE;
   header[3] = flg;
 
-  // MTIME: Unix timestamp as uint32 LE. Clamp to uint32 range.
-  const mtime = Math.floor(options.mtime.getTime() / 1000) >>> 0;
+  // MTIME: Unix timestamp as uint32 LE. Out-of-range dates (pre-1970,
+  // post-2106) clamp to 0 — RFC 1952's "no time stamp available" — since
+  // wrapping modulo 2^32 would record a silently wrong timestamp.
+  const seconds = Math.floor(options.mtime.getTime() / 1000);
+  const mtime = seconds >= 0 && seconds <= 0xffffffff ? seconds : 0;
   writeUint32LE(header, 4, mtime);
 
   header[8] = XFL_DEFAULT;

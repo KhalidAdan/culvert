@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "@culvert/crc32",
   "version": "0.1.2",
   "description": "IEEE 802.3 CRC-32. Streaming-native. Zero dependencies.",
@@ -11,12 +11,13 @@
   },
   "homepage": "https://github.com/KhalidAdan/culvert#readme",
   "type": "module",
-  "main": "dist/index",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -43,7 +44,7 @@
     "gzip"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.12"
   },
   "publishConfig": {
     "access": "public"

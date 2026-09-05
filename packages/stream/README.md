@@ -33,13 +33,22 @@ Each one passes the filter: _would a five-line async generator get this wrong?_
 ```ts
 tap(fn)                      // observe without altering — awaits async fn
 finalize(fn)                 // guaranteed cleanup on any termination path
-abortable(source, signal)    // stop on AbortSignal
+abortable(source, signal)    // end the stream on AbortSignal
 batch(n, ms?)                // count/time windowing with correct flush
 merge(...sources)            // concurrent interleave with full teardown
 concat(...sources)           // sequential with inter-source cleanup
 flatMap(fn, { concurrency }) // subsumes concatMap/mergeMap via one knob
 buffer(size, strategy?)      // push→pull: "suspend" | "drop" | "slide" | "error"
 ```
+
+**`abortable()` ends the stream cleanly — it does not throw.** The
+signal is treated as just another reason a source might end, so an
+aborted pipeline resolves like a completed one. If your caller must
+distinguish a whole result from a truncated one, check
+`signal.aborted` after `pipe()` resolves — or do what the format
+packages do and throw your own error (`TarAbortError`,
+`GzipAbortError`, `CsvAbortError`) at your layer. The abort takes
+effect even while the source is parked mid-pull on an idle producer.
 
 `map`, `filter`, `take`, `scan` are **not included** — they're trivial as inline generators and the language already provides them.
 
@@ -62,9 +71,24 @@ writeTo(writable); // sink that writes to a WritableStream
 
 ## The pattern that proves it
 
-ZIP entry pipeline — observe raw bytes, compress, observe compressed bytes, write:
+ZIP entry pipeline — observe raw bytes, compress, observe compressed bytes, write. The deflate stage is the platform's `CompressionStream`, wrapped into a `Transform` with the bridges (every import below is real):
 
 ```ts
+import { CRC32 } from "@culvert/crc32";
+import {
+  pipe,
+  tap,
+  writeTo,
+  fromReadableStream,
+  toReadableStream,
+} from "@culvert/stream";
+import type { Source } from "@culvert/stream";
+
+const deflate = (source: Source<Uint8Array>) =>
+  fromReadableStream(
+    toReadableStream(source).pipeThrough(new CompressionStream("deflate-raw")),
+  );
+
 const crc = new CRC32();
 let rawSize = 0,
   compressedSize = 0;
@@ -75,7 +99,7 @@ await pipe(
     crc.update(chunk);
     rawSize += chunk.length;
   }),
-  deflate(),
+  deflate,
   tap((chunk) => {
     compressedSize += chunk.length;
   }),
@@ -111,7 +135,7 @@ await pipe(
 
 ## Stats
 
-921 lines of source. 725 lines of tests. 54 tests. Zero dependencies.
+~1,000 lines of source. More lines of tests than source. 75 tests. Zero dependencies.
 
 ```
 stream
@@ -119,6 +143,7 @@ stream
 ├── zip      (stream + crc32)
 ├── tar      (stream)
 ├── gzip     (stream + crc32)
+├── csv      (stream)
 └── archive  (stream + zip + tar — not yet)
 ```
 

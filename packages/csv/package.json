@@ -1,7 +1,7 @@
 ﻿{
-  "name": "@culvert/zip",
-  "version": "0.1.3",
-  "description": "Streaming ZIP writer and reader. Bounded memory. Predictable backpressure. Works in Node, Deno, Bun, Cloudflare Workers, and browsers.",
+  "name": "@culvert/csv",
+  "version": "0.1.0",
+  "description": "Streaming CSV parser and stringifier. Bounded memory. RFC 4180 plus the real-world dialects. Strict-by-default malformed-input handling.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KhalidAdan/culvert.git"
@@ -29,23 +29,21 @@
   "scripts": {
     "build": "tsc --build",
     "prepublishOnly": "npm run build",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^5.7.0"
   },
   "dependencies": {
-    "@culvert/stream": "*",
-    "@culvert/crc32": "*"
+    "@culvert/stream": "*"
   },
   "keywords": [
-    "zip",
-    "archive",
-    "streaming",
-    "zip64",
-    "compression",
-    "deflate",
-    "cbz"
+    "csv",
+    "tsv",
+    "parser",
+    "stringify",
+    "streaming"
   ],
   "engines": {
     "node": ">=20.12"

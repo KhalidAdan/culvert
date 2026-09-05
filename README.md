@@ -17,8 +17,14 @@ If you understand that line, you understand Culvert.
 | [`@culvert/stream`](./packages/stream) | Source/Transform/Sink + `pipe()` + 8 operators + `channel()`             |
 | [`@culvert/zip`](./packages/zip)       | Streaming ZIP writer + forward reader + random-access reader with ZIP64  |
 | [`@culvert/tar`](./packages/tar)       | Streaming tar reader and writer — ustar + PAX, strict path policy      |
-| [`@culvert/gzip`](./packages/gzip)     | Streaming gzip compression and decompression — platform DEFLATE, CRC-32 verified |
+| [`@culvert/gzip`](./packages/gzip)     | Streaming gzip framing — BYOC DEFLATE codec, CRC-32 verified, concatenated members |
 | [`@culvert/crc32`](./packages/crc32)   | IEEE 802.3 CRC-32 — streaming-native, zero dependencies                   |
+| [`@culvert/csv`](./packages/csv)       | Streaming CSV parser and stringifier — RFC 4180 + real-world dialects, strict-by-default |
+
+All packages are ESM with TypeScript declarations, and run on Node ≥ 20.12,
+Deno, Bun, Cloudflare Workers, and browsers. On Node ≥ 20.17 (all
+current LTS lines) `require()` works too, via require(ESM); older
+CommonJS consumers should use dynamic `import()`.
 
 ## Design bet
 
@@ -41,6 +47,7 @@ stream
 ├── zip            (stream + crc32)
 ├── tar            (stream)
 ├── gzip           (stream + crc32)
+├── csv            (stream)
 └── archive        (stream + zip + tar — not yet)
 ```
 
@@ -48,9 +55,11 @@ This graph stays clean and acyclic. If it doesn't, we've lost the plot.
 
 ## Status
 
-**v2 — shipped.** Stream, crc32, zip, tar, and gzip are in.
+**v2 — shipped.** Stream, crc32, zip, tar, gzip, and csv are in.
 
-**Next:** `@culvert/csv`.
+**Next:** nothing committed. On the radar: `@culvert/bytes` (waiting
+for a byte-reader API the three private copies actually agree on) and
+`@culvert/archive` (waiting for real friction).
 
 ## License
 

@@ -141,7 +141,7 @@ PAX `'x'` and `'g'` headers are consumed internally and never surface.
 ### Path policy on read
 
 Same shape as the writer; the reader is where extraction-time path
-attacks ("zip slip" / "tar slip") get caught.
+attacks ("zip slip" / "tar slip") against entry *names* get caught.
 
 ```ts
 readTarEntries(source);                                  // strict (default)
@@ -155,6 +155,15 @@ readTarEntries(source, {
 In strict mode, a hostile path halts iteration with
 `TarCorruptionError`. The function form lets you skip individual
 entries (return `Error`) without aborting the whole archive.
+
+**The policy validates entry names only — link `target` values are
+passed through verbatim.** Symlink targets legitimately contain `..`
+and absolute paths in benign archives, so the reader cannot reject
+them for you. If you *materialize* links during extraction, you are
+the extraction layer: resolve each symlink/hardlink `target` against
+your extraction root and refuse targets that escape it, or the classic
+symlink-then-write-through-it tar-slip still applies. (This package
+ships no extractor, so reading alone is safe.)
 
 Note: a PAX `'x'` extended header immediately preceding a skipped
 entry is consumed and discarded with that entry. It does not carry

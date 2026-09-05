@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "@culvert/stream",
   "version": "0.1.2",
   "description": "The missing standard library for streaming in JavaScript.",
@@ -16,7 +16,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -46,7 +47,7 @@
     "transform"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.12"
   },
   "publishConfig": {
     "access": "public"

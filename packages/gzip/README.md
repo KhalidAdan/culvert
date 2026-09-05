@@ -4,11 +4,20 @@ Streaming gzip framing. You bring DEFLATE.
 
 ```ts
 import { gzip, gunzip } from "@culvert/gzip";
-import { pipe } from "@culvert/stream";
+import { pipe, collectBytes, fromReadableStream } from "@culvert/stream";
 
-await pipe(source, gzip(myDeflator), writeTo("output.gz"));
-await pipe(readFile("output.gz"), gunzip(myInflator), writeTo("output"));
+const compressed = await pipe(source, gzip(myDeflator), collectBytes());
+
+const response = await fetch(url); // a .gz download
+const data = await pipe(
+  fromReadableStream(response.body!),
+  gunzip(myInflator),
+  collectBytes(),
+);
 ```
+
+(For files on Node, bridge `node:fs` streams with `Readable.toWeb()` /
+`Writable.toWeb()` and `writeTo()` — see [Compress](#compress).)
 
 ## Install
 
@@ -43,7 +52,7 @@ Ten lines. Platform-native. Zero dependencies. Covers 95% of use cases.
 - **Concatenated member support on non-Node runtimes.** `DecompressionStream("gzip")` in browsers, Cloudflare Workers, Deno, and Bun silently truncates after the first member. If you process log files, HTTP chunked responses, or anything produced by `cat a.gz b.gz`, the platform gives you partial data and no error.
 - **CRC-32 policy control.** The platform's CRC behavior on mismatch is inconsistent across runtimes — sometimes it throws before yielding data, sometimes after. You can't recover data from a damaged stream. `@culvert/gzip` offers strict and permissive modes.
 - **Consistent error taxonomy.** Platform errors are generic `TypeError` or `Error` with runtime-specific messages. `@culvert/gzip` throws `GzipCorruptionError` with clear descriptions — same taxonomy as `@culvert/zip` and `@culvert/tar`.
-- **Header metadata access.** The platform doesn't expose FNAME, FCOMMENT, MTIME, or other header fields. If you need them, you need to parse the header yourself, and this package does that.
+- **Correct header handling.** FEXTRA/FNAME/FCOMMENT are parsed and skipped per RFC 1952, and FHCRC header checksums are actually verified under strict mode — the platform does none of that observably. (The parsed fields aren't yet *exposed* to callers; an `onHeader` hook is a v2 candidate.)
 
 If none of those apply, use the platform. Seriously.
 
@@ -80,46 +89,78 @@ Simpler than the inflator — no boundary detection needed. `final: true` signal
 
 ### Wrapping pako
 
-Pako exposes the zlib `strm.avail_in` field, which is exactly the consumed byte count:
+Pako exposes the zlib `strm.avail_in` field, which is exactly the consumed byte count. Two things the obvious wrapper gets wrong, so don't write the obvious wrapper: pako's `.result` is only populated after the **whole** stream has been pushed — reading it per-chunk buffers the entire output in memory, which defeats streaming and OOMs on large inputs — and pako reports corruption through `.err`, not by throwing. Use the `onData` hook and check `.err`:
 
 ```ts
 import Pako from "pako";
 import type { Inflator, Deflator } from "@culvert/gzip";
 
+function concat(chunks: Uint8Array[]): Uint8Array {
+  if (chunks.length === 0) return new Uint8Array(0);
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
+  return out;
+}
+
 function pakoInflator(): Inflator {
-  let inf = new Pako.Inflate({ raw: true });
+  let chunks: Uint8Array[] = [];
+  const make = () => {
+    const inf = new Pako.Inflate({ raw: true });
+    inf.onData = (chunk) => { chunks.push(chunk); };
+    inf.onEnd = () => {}; // output flows through onData, not .result
+    return inf;
+  };
+  let inf = make();
   return {
     inflate(chunk) {
       inf.push(chunk);
+      if (inf.err) throw new Error(`pako inflate error ${inf.err}: ${inf.msg}`);
       const consumed = chunk.length - inf.strm.avail_in;
-      const output = inf.result ?? new Uint8Array(0);
+      const output = concat(chunks);
+      chunks = [];
       return { output, consumed, done: inf.ended };
     },
-    reset() {
-      inf = new Pako.Inflate({ raw: true });
-    },
+    reset() { chunks = []; inf = make(); },
   };
 }
 
 function pakoDeflator(): Deflator {
+  let chunks: Uint8Array[] = [];
   const def = new Pako.Deflate({ raw: true });
+  def.onData = (chunk) => { chunks.push(chunk); };
+  def.onEnd = () => {};
   return {
     deflate(chunk, final) {
       def.push(chunk, final);
-      return def.result ?? new Uint8Array(0);
+      if (def.err) throw new Error(`pako deflate error ${def.err}: ${def.msg}`);
+      const output = concat(chunks);
+      chunks = [];
+      return output;
     },
   };
 }
 ```
 
-Twelve lines. Copy it and move on.
+This is the exact codec this package's own test suite runs on: constant-memory streaming, and corruption surfaces as `GzipCorruptionError` instead of silent empty output.
 
 ## Compress
 
+`writeTo()` takes a Web `WritableStream`. On Node, bridge `node:fs`
+streams with `Readable.toWeb()` / `Writable.toWeb()`:
+
 ```ts
+import { createReadStream, createWriteStream } from "node:fs";
+import { Readable, Writable } from "node:stream";
+import { pipe, writeTo } from "@culvert/stream";
 import { gzip } from "@culvert/gzip";
 
-await pipe(source, gzip(myDeflator), writeTo("data.json.gz"));
+await pipe(
+  Readable.toWeb(createReadStream("data.json")),
+  gzip(myDeflator),
+  writeTo(Writable.toWeb(createWriteStream("data.json.gz"))),
+);
 ```
 
 With options:
@@ -133,7 +174,7 @@ await pipe(
     comment: "nightly export",    // stored in gzip header (FCOMMENT)
     signal: AbortSignal.timeout(5000),
   }),
-  writeTo("data.json.gz"),
+  collectBytes(),
 );
 ```
 
@@ -142,15 +183,22 @@ await pipe(
 ## Decompress
 
 ```ts
+import { createReadStream, createWriteStream } from "node:fs";
+import { Readable, Writable } from "node:stream";
+import { pipe, writeTo } from "@culvert/stream";
 import { gunzip } from "@culvert/gzip";
 
-await pipe(readFile("data.json.gz"), gunzip(myInflator), writeTo("data.json"));
+await pipe(
+  Readable.toWeb(createReadStream("data.json.gz")),
+  gunzip(myInflator),
+  writeTo(Writable.toWeb(createWriteStream("data.json"))),
+);
 ```
 
 With abort:
 
 ```ts
-await pipe(compressedSource, gunzip(myInflator, { signal }), writeTo("output"));
+await pipe(compressedSource, gunzip(myInflator, { signal }), collectBytes());
 ```
 
 ## Concatenated members
@@ -159,10 +207,10 @@ RFC 1952 §2.2 explicitly allows multiple gzip members in a single stream. This 
 
 ```ts
 // Works on browsers, Cloudflare Workers, Deno, Bun
-await pipe(
-  readFile("combined.gz"), // cat a.gz b.gz > combined.gz
+const combined = await pipe(
+  fromReadableStream(response.body!), // cat a.gz b.gz, served over HTTP
   gunzip(myInflator),
-  writeTo("combined.txt"),
+  collectBytes(),
 );
 ```
 
@@ -171,6 +219,9 @@ Log rotation pipelines, HTTP chunked responses, and `cat`-produced archives all 
 ## Compose with tar
 
 ```ts
+import { createWriteStream } from "node:fs";
+import { Writable } from "node:stream";
+import { pipe, writeTo } from "@culvert/stream";
 import { createTar, EPOCH } from "@culvert/tar";
 import { gzip } from "@culvert/gzip";
 
@@ -184,7 +235,7 @@ await pipe(
     });
   }),
   gzip(myDeflator),
-  writeTo("archive.tar.gz"),
+  writeTo(Writable.toWeb(createWriteStream("archive.tar.gz"))),
 );
 ```
 
@@ -193,10 +244,10 @@ await pipe(
 `strict` (default) throws `GzipCorruptionError` on CRC-32 or ISIZE mismatch. `permissive` ignores mismatches and yields the decompressed data anyway — useful for recovering data from damaged streams.
 
 ```ts
-await pipe(
+const recovered = await pipe(
   damagedSource,
   gunzip(myInflator, { crcPolicy: "permissive" }),
-  writeTo("recovered.txt"),
+  collectBytes(),
 );
 ```
 
@@ -204,7 +255,7 @@ await pipe(
 
 Two named error classes, same taxonomy as `@culvert/zip` and `@culvert/tar`:
 
-- **`GzipCorruptionError`** — the gzip stream is malformed or corrupt. Covers: bad magic bytes, unsupported compression method, reserved FLG bits, CRC-32 mismatch (strict mode), ISIZE mismatch (strict mode), truncated header, truncated footer, truncated compressed data, invalid DEFLATE data (if the codec throws).
+- **`GzipCorruptionError`** — the gzip stream is malformed or corrupt. Covers: bad magic bytes, unsupported compression method, reserved FLG bits, CRC-32 mismatch (strict mode), ISIZE mismatch (strict mode), header CRC-16 mismatch (strict mode, when FHCRC is present), truncated header, truncated footer, truncated compressed data, and invalid DEFLATE data — a throwing codec is wrapped into this class.
 - **`GzipAbortError`** — an `AbortSignal` fired. The operation was cancelled.
 
 ```ts
@@ -261,7 +312,7 @@ stream
 ├── zip            (stream + crc32)
 ├── tar            (stream)
 ├── gzip           ← you are here  (stream + crc32)
-├── csv            (stream — not yet)
+├── csv            (stream)
 └── archive        (stream + zip + tar — not yet)
 ```
 

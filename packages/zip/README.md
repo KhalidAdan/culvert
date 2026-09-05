@@ -1,6 +1,7 @@
 # @culvert/zip
 
-Streaming ZIP writer and reader. Constant memory. Predictable
+Streaming ZIP writer and reader. Bounded memory (see
+[what's not included](#whats-not-included) for the per-file caveat). Predictable
 backpressure. Works in Node, Deno, Bun, Cloudflare Workers, and
 browsers.
 

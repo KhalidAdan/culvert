@@ -97,11 +97,18 @@ export const EOCD_FIXED_SIZE = 22;
 /** Maximum EOCD comment length (uint16 max) */
 export const EOCD_MAX_COMMENT_SIZE = 0xffff;
 
+/** ZIP64 EOCD locator size — sits immediately before the standard EOCD. */
+export const ZIP64_EOCD_LOCATOR_SIZE = 20;
+
 /**
  * Maximum bytes to read when searching for the EOCD signature.
- * EOCD fixed (22) + max comment (65,535) + 1 byte margin = 65,558.
+ * ZIP64 locator (20) + EOCD fixed (22) + max comment (65,535) + 1 byte
+ * margin = 65,578. The locator must fit inside the window too: with a
+ * maximum-length comment the EOCD sits 65,557 bytes from the end, and
+ * the locator 20 bytes before that.
  */
-export const EOCD_SEARCH_SIZE = EOCD_FIXED_SIZE + EOCD_MAX_COMMENT_SIZE + 1;
+export const EOCD_SEARCH_SIZE =
+  ZIP64_EOCD_LOCATOR_SIZE + EOCD_FIXED_SIZE + EOCD_MAX_COMMENT_SIZE + 1;
 
 // ---------------------------------------------------------------------------
 // Local file header field offsets (APPNOTE §4.3.7)

@@ -17,6 +17,7 @@ import type {
 } from "./types.js";
 import {
   COMPRESSION_DEFLATE,
+  COMPRESSION_STORE,
   EOCD_SEARCH_SIZE,
   LOCAL_HEADER_FIXED_SIZE,
   READ_CHUNK_SIZE,
@@ -126,11 +127,21 @@ function entrySource(
       // Bridge from seek to stream
       const compressed = seekChunks(seekable, entry);
 
-      // Pick the right decompression transform — same ones the writer uses
-      const decompress =
-        entry.compressionMethod === COMPRESSION_DEFLATE
-          ? inflateRaw()
-          : identityTransform();
+      // Pick the right decompression transform — same ones the writer
+      // uses. Any other method (bzip2, LZMA, Zstd, AES, a BYOC-written
+      // entry) must be refused by name: treating it as store would hand
+      // the caller raw compressed bytes as if they were file content.
+      let decompress;
+      if (entry.compressionMethod === COMPRESSION_STORE) {
+        decompress = identityTransform();
+      } else if (entry.compressionMethod === COMPRESSION_DEFLATE) {
+        decompress = inflateRaw();
+      } else {
+        throw new ZipCorruptionError(
+          `Unsupported compression method ${entry.compressionMethod} ` +
+            `for "${entry.name}": only store (0) and deflate (8) are supported`,
+        );
+      }
 
       const decompressed = decompress(compressed);
 
