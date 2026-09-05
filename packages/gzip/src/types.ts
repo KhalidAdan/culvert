@@ -66,6 +66,25 @@ export interface GzipOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Parsed gzip member header metadata (RFC 1952 §2.3.1), surfaced via
+ * `GunzipOptions.onHeader`.
+ */
+export interface GzipHeader {
+  /** MTIME field. `null` when the field is 0 — "no time stamp available". */
+  mtime: Date | null;
+  /** FNAME, decoded as ISO 8859-1. `null` when the field is absent. */
+  filename: string | null;
+  /** FCOMMENT, decoded as ISO 8859-1. `null` when the field is absent. */
+  comment: string | null;
+  /** Raw FEXTRA payload, subfields undecoded. `null` when absent. */
+  extra: Uint8Array | null;
+  /** XFL byte — compressor hints (2 = max compression, 4 = fastest). */
+  xfl: number;
+  /** OS byte (RFC 1952 §2.3.1 table; 255 = unknown). */
+  os: number;
+}
+
 export interface GunzipOptions {
   /**
    * CRC-32 and ISIZE validation policy.
@@ -74,6 +93,16 @@ export interface GunzipOptions {
    * - `'permissive'` — ignore mismatches, yield data anyway.
    */
   crcPolicy?: "strict" | "permissive";
+  /**
+   * Observe each member's header metadata — an observer in the spirit
+   * of `tap()`, called once per gzip member (concatenated streams have
+   * several) with a 0-based member index, after the header has been
+   * parsed and (in strict mode) FHCRC-verified, and before any of that
+   * member's data is yielded. Exceptions propagate and tear the
+   * pipeline down. When omitted, header fields are skipped without
+   * being retained.
+   */
+  onHeader?: (header: GzipHeader, memberIndex: number) => void;
   /** Cancel decompression. */
   signal?: AbortSignal;
 }

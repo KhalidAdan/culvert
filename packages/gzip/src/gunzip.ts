@@ -13,6 +13,7 @@ import {
   FNAME,
   FCOMMENT,
   FHCRC,
+  MAX_HEADER_STRING_SIZE,
 } from "./constants.js";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,39 @@ export function gunzip(
 
     const reader = createByteReader(source);
     let hasProcessedMember = false;
+    let memberIndex = 0;
+
+    // Header strings are only retained when someone is listening; the
+    // cap applies either way (see readHeaderString).
+    const wantHeader = options.onHeader !== undefined;
+    const latin1 = wantHeader ? new TextDecoder("latin1") : null;
+
+    /**
+     * Consume a NUL-terminated header string (FNAME/FCOMMENT), feeding
+     * the header CRC. Returns the decoded string when `keep`, else null.
+     * The fields carry no declared length, so a hostile stream could run
+     * them forever — cap at MAX_HEADER_STRING_SIZE regardless of `keep`.
+     */
+    async function readHeaderString(
+      field: string,
+      headerCrc: CRC32 | null,
+      keep: boolean,
+    ): Promise<string | null> {
+      const bytes: number[] | null = keep ? [] : null;
+      let length = 0;
+      while (true) {
+        const byte = await reader.readExact(1);
+        headerCrc?.update(byte);
+        if (byte[0] === 0x00) break;
+        if (++length > MAX_HEADER_STRING_SIZE) {
+          throw new GzipCorruptionError(
+            `${field} field exceeds ${MAX_HEADER_STRING_SIZE} bytes without a terminator`,
+          );
+        }
+        bytes?.push(byte[0]!);
+      }
+      return bytes ? latin1!.decode(Uint8Array.from(bytes)) : null;
+    }
 
     // --- Concatenated member loop (RFC 1952 §2.2) ---
     while (true) {
@@ -88,29 +122,25 @@ export function gunzip(
       const headerCrc = header.flg & FHCRC ? new CRC32() : null;
       headerCrc?.update(headerBuf);
 
+      let extraPayload: Uint8Array | null = null;
+      let filename: string | null = null;
+      let comment: string | null = null;
+
       if (header.flg & FEXTRA) {
         const lenBuf = await reader.readExact(2);
         headerCrc?.update(lenBuf);
         const extraLen = lenBuf[0]! | (lenBuf[1]! << 8);
-        const extra = await reader.readExact(extraLen); // content discarded
+        const extra = await reader.readExact(extraLen);
         headerCrc?.update(extra);
+        if (wantHeader) extraPayload = extra;
       }
 
       if (header.flg & FNAME) {
-        // Read until null terminator
-        while (true) {
-          const byte = await reader.readExact(1);
-          headerCrc?.update(byte);
-          if (byte[0] === 0x00) break;
-        }
+        filename = await readHeaderString("FNAME", headerCrc, wantHeader);
       }
 
       if (header.flg & FCOMMENT) {
-        while (true) {
-          const byte = await reader.readExact(1);
-          headerCrc?.update(byte);
-          if (byte[0] === 0x00) break;
-        }
+        comment = await readHeaderString("FCOMMENT", headerCrc, wantHeader);
       }
 
       if (header.flg & FHCRC) {
@@ -126,6 +156,23 @@ export function gunzip(
             );
           }
         }
+      }
+
+      // Surface header metadata once the header is fully parsed and (in
+      // strict mode) FHCRC-verified — never before, so the observer only
+      // sees headers the policy accepted.
+      if (options.onHeader) {
+        options.onHeader(
+          {
+            mtime: header.mtime === 0 ? null : new Date(header.mtime * 1000),
+            filename,
+            comment,
+            extra: extraPayload,
+            xfl: header.xfl,
+            os: header.os,
+          },
+          memberIndex,
+        );
       }
 
       // --- Inflate via codec ---
@@ -196,6 +243,7 @@ export function gunzip(
       // Reset codec for next concatenated member
       inflator.reset();
       hasProcessedMember = true;
+      memberIndex++;
 
       // Loop continues — peekBytes(2) will check for next member
     }

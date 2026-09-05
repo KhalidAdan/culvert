@@ -68,5 +68,13 @@ export const OS_UNKNOWN = 0xff;
 // ---------------------------------------------------------------------------
 
 export const XFL_DEFAULT = 0; // no specific compressor flags
+
+/**
+ * Maximum accepted length of the NUL-terminated FNAME and FCOMMENT
+ * header fields. RFC 1952 declares no limit, which makes the fields an
+ * unbounded-read vector in hostile streams; 65,535 mirrors FEXTRA's own
+ * 16-bit length cap and is far beyond any real filename or comment.
+ */
+export const MAX_HEADER_STRING_SIZE = 0xffff;
 export const XFL_MAXIMUM_COMPRESSION = 2; // slowest algorithm
 export const XFL_FASTEST_COMPRESSION = 4; // fastest algorithm

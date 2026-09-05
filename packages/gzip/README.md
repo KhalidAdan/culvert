@@ -52,7 +52,7 @@ Ten lines. Platform-native. Zero dependencies. Covers 95% of use cases.
 - **Concatenated member support on non-Node runtimes.** `DecompressionStream("gzip")` in browsers, Cloudflare Workers, Deno, and Bun silently truncates after the first member. If you process log files, HTTP chunked responses, or anything produced by `cat a.gz b.gz`, the platform gives you partial data and no error.
 - **CRC-32 policy control.** The platform's CRC behavior on mismatch is inconsistent across runtimes — sometimes it throws before yielding data, sometimes after. You can't recover data from a damaged stream. `@culvert/gzip` offers strict and permissive modes.
 - **Consistent error taxonomy.** Platform errors are generic `TypeError` or `Error` with runtime-specific messages. `@culvert/gzip` throws `GzipCorruptionError` with clear descriptions — same taxonomy as `@culvert/zip` and `@culvert/tar`.
-- **Correct header handling.** FEXTRA/FNAME/FCOMMENT are parsed and skipped per RFC 1952, and FHCRC header checksums are actually verified under strict mode — the platform does none of that observably. (The parsed fields aren't yet *exposed* to callers; an `onHeader` hook is a v2 candidate.)
+- **Header metadata access.** The platform doesn't expose FNAME, FCOMMENT, MTIME, or the extra field. `gunzip`'s `onHeader` hook hands you each member's parsed (and, in strict mode, FHCRC-verified) header — see [Header metadata](#header-metadata).
 
 If none of those apply, use the platform. Seriously.
 
@@ -201,6 +201,41 @@ With abort:
 await pipe(compressedSource, gunzip(myInflator, { signal }), collectBytes());
 ```
 
+## Header metadata
+
+Each gzip member's header can carry the original filename (FNAME), a
+comment (FCOMMENT), a modification time (MTIME), and vendor extra data
+(FEXTRA) — `gzip()` writes them from its options, and `gunzip()`
+surfaces them through `onHeader`, an observer in the spirit of `tap()`:
+
+```ts
+import type { GzipHeader } from "@culvert/gzip";
+
+const names: (string | null)[] = [];
+const data = await pipe(
+  compressedSource,
+  gunzip(myInflator, {
+    onHeader: (header: GzipHeader, memberIndex) => {
+      names.push(header.filename); // one call per member
+    },
+  }),
+  collectBytes(),
+);
+```
+
+The callback fires once per member (concatenated streams have several),
+with a 0-based `memberIndex`, after the header is parsed and — in
+strict mode — FHCRC-verified, and before any of that member's data is
+yielded. `mtime` is `null` when the field is 0 (RFC 1952's "no time
+stamp", which is also what `gzip()` writes by default for
+reproducibility); `filename`/`comment` are `null` when absent, decoded
+as ISO 8859-1 when present; `extra` is the raw FEXTRA payload. A
+throwing callback tears the pipeline down.
+
+Hostile-input note: FNAME/FCOMMENT have no declared length, so the
+reader caps them at 65,535 bytes (throwing `GzipCorruptionError`
+beyond it) whether or not a callback is registered.
+
 ## Concatenated members
 
 RFC 1952 §2.2 explicitly allows multiple gzip members in a single stream. This package handles them on every runtime — not just Node.
@@ -284,7 +319,7 @@ GzipCorruptionError
 GzipAbortError
 ```
 
-Five type exports (for implementors):
+Six type exports (for implementors):
 
 ```ts
 Inflator
@@ -292,6 +327,7 @@ InflateResult
 Deflator
 GzipOptions
 GunzipOptions
+GzipHeader
 ```
 
 That's the whole package.

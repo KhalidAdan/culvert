@@ -3,6 +3,21 @@
 All notable changes to the culvert packages, newest first. Versions are
 per-package; each release lists every package it touches.
 
+## Unreleased
+
+### @culvert/gzip 0.4.0
+
+- **Added:** `onHeader` in `GunzipOptions` — a per-member observer that
+  surfaces each gzip member's parsed header metadata (`filename`,
+  `comment`, `mtime`, raw `extra`, `xfl`, `os`) with a 0-based member
+  index. Called after the header is parsed and, in strict mode,
+  FHCRC-verified — never for a header the policy rejected — and before
+  any of that member's data is yielded. New exported type: `GzipHeader`.
+- **Added:** FNAME/FCOMMENT fields are capped at 65,535 bytes (the
+  fields carry no declared length — an unbounded-read vector in hostile
+  streams); exceeding the cap throws `GzipCorruptionError`, with or
+  without a callback registered.
+
 ## 2026-09-05 — the hardening release
 
 A 21-agent deep review of the whole library found 37 issues; every one
